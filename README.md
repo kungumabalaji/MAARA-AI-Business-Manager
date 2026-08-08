@@ -5,24 +5,26 @@ Profit dashboards built on top of it. Built for **Dosa n Chutney** as the pilot
 tenant.
 
 This README is written for anyone joining the project cold — it explains what
-exists today, what's still a stub, and how the pieces fit together, so you don't
-have to reverse-engineer it from the code.
+exists today and how the pieces fit together, so you don't have to
+reverse-engineer it from the code.
 
 ## Status at a glance
 
 | Layer | State |
 |---|---|
 | Frontend UI (entry form + 3 dashboards) | ✅ Built, fully interactive |
-| Frontend data | ⚠️ **Mock data**, not connected to the backend yet |
-| Backend API | 🚧 Scaffolded — one placeholder endpoint (`/auth/login`) |
-| Database models | 🚧 Empty stubs — no tables defined yet |
-| Auth | 🚧 Placeholder — accepts any non-empty email/password |
+| Frontend data | ✅ Real — reads/writes through the backend API, no mock data |
+| Backend API | ✅ FastAPI, tenant-scoped, JWT-verified |
+| Database models & migrations | ✅ Multi-tenant schema, versioned via Alembic |
+| Auth | ✅ Supabase Auth (email/password), JWT verified server-side via JWKS |
+| Calculation engine | ✅ Config-driven (templates/fields/rules), no hardcoded formulas |
+| Deployment | ✅ Frontend on Vercel, backend on Render |
 
-**The most important thing to know:** the dashboards you see in the app are not
-reading from the database. They're computed client-side from a hand-built
-dataset in [`frontend/src/data/reportData.ts`](frontend/src/data/reportData.ts)
-so the UI has something realistic to render. Wiring the frontend to real
-persisted data is the next major piece of work — see [Roadmap](#roadmap).
+**The most important thing to know:** the Daily Sales Report form persists to
+Postgres (via Supabase) and runs through a generic calculation engine — nothing
+in the reporting logic is restaurant-specific or hardcoded. The three
+dashboards (Sales, Expenses, Profit) are computed on read from that same saved
+data. See [Architecture](#architecture) for how the pieces connect.
 
 ## Architecture
 
@@ -33,51 +35,52 @@ flowchart LR
     end
 
     subgraph Server["FastAPI backend (backend/)"]
-        API["/auth/login\n(placeholder only)"]
+        API["/auth/me\n/organizations/{id}/daily-reports\n/organizations/{id}/dashboard/*"]
+        Calc["calculation engine\n(templates → fields → rules)"]
     end
 
     subgraph Data["Supabase"]
-        PG[("Postgres\nvia SQLAlchemy")]
-        SBAuth["Supabase Auth\n(not yet integrated)"]
+        PG[("Postgres\nvia SQLAlchemy + Alembic")]
+        SBAuth["Supabase Auth\n(JWT, verified via JWKS)"]
     end
 
-    UI -- "fetch POST /auth/login" --> API
-    API -- "SQLAlchemy session\n(engine created, no models used yet)" --> PG
-    UI -. "planned" .-> SBAuth
-
-    style SBAuth stroke-dasharray: 5 5
-    style PG stroke-dasharray: 5 5
+    UI -- "sign in" --> SBAuth
+    UI -- "Bearer JWT" --> API
+    API -- "verify JWT (PyJWT + JWKS)" --> SBAuth
+    API --> Calc
+    API -- "SQLAlchemy session" --> PG
 ```
 
-Today, only the `UI → /auth/login → 200 OK` path is real. Everything inside the
-app after login (the ledger, the three dashboards) runs entirely in the browser.
+Sign-in goes straight from the browser to Supabase Auth (`supabase-js`); the
+resulting JWT is attached to every backend request and verified server-side
+against Supabase's JWKS. All reporting data — daily report values, expenses,
+dashboard aggregates — is read from and written to Postgres through the
+backend, scoped to the caller's organization membership.
 
 ## Frontend data flow
 
 ```mermaid
 flowchart TD
-    RD["reportData.ts\nmock sales ledger, expense matrix,\nformatters (formatGBP, pctChange, ...)"]
-    DRP["DailyReportPage\n(owns all shared state: sales, expenses, expenseMatrix)"]
+    API["src/api/reportsApi.ts\n(typed fetch wrapper, auth header injection)"]
+    DRP["DailyReportPage\n(loads/saves the day's report)"]
     SD[SalesDashboard]
     ED[ExpenseDashboard]
     PT[ProfitTracker]
     Charts["components/charts/Charts.tsx\nBarTrend · MultiLineTrend · Donut · RankedBars"]
 
-    RD --> DRP
-    DRP -->|props| SD
-    DRP -->|expenseMatrix + setter| ED
-    DRP -->|expenseMatrix| PT
-    ED -->|edits flow back up| DRP
+    API --> DRP
+    API --> SD
+    API --> ED
+    API --> PT
     SD --> Charts
     ED --> Charts
     PT --> Charts
 ```
 
-Every KPI, chart and comparison is *computed*, not hardcoded — percentages,
-totals and trend lines all derive from the data in `reportData.ts` plus
-whatever the user has typed into the expense matrix. That matters for anyone
-extending a dashboard: add data to `reportData.ts`, don't hardcode a number in
-a component.
+Each page fetches its own data independently from the backend — there's no
+shared mock dataset anymore. `src/data/reportData.ts` now only holds pure
+formatting/derivation helpers (currency formatting, % change, date labels)
+shared across the dashboards.
 
 ## Repo layout
 
@@ -86,29 +89,39 @@ MAARA-AI-Business-Manager/
 ├── frontend/                      React 19 + TypeScript + Vite SPA
 │   ├── public/                    Logo, favicon
 │   └── src/
+│       ├── api/                       client.ts, reportsApi.ts, types.ts — typed backend API layer
+│       ├── lib/supabaseClient.ts      Supabase JS client (auth)
 │       ├── pages/
-│       │   ├── LoginPage.tsx          Sign-in screen (email/password → /auth/login)
-│       │   ├── DailyReportPage.tsx    Shell: sidebar nav + top-level state owner
+│       │   ├── LoginPage.tsx          Sign-in/sign-up via Supabase Auth
+│       │   ├── DailyReportPage.tsx    Shell: sidebar nav + daily report load/save
 │       │   ├── SalesDashboard.tsx     Revenue by channel, trend, comparisons
-│       │   ├── ExpenseDashboard.tsx   Spend by category, fixed vs variable, commissions
-│       │   └── ProfitTracker.tsx      Revenue vs expenses vs profit, insights
+│       │   ├── ExpenseDashboard.tsx   Spend by category, trend, recent expenses
+│       │   └── ProfitTracker.tsx      Revenue vs expenses vs profit, daily P/L, cash reconciliation
 │       ├── components/charts/
 │       │   └── Charts.tsx             Small dependency-free SVG chart primitives
-│       ├── data/
-│       │   └── reportData.ts          Shared mock dataset + calculation helpers
-│       ├── App.tsx / App.css          Session state, routing between pages, all styling
-│       └── main.tsx                   Vite entrypoint
+│       ├── data/reportData.ts         Shared formatting/derivation helpers (no data)
+│       └── App.tsx / App.css          Session state, routing between pages, all styling
 │
-├── backend/                       FastAPI service (early scaffold)
-│   ├── main.py                    App entrypoint + placeholder POST /auth/login
-│   ├── auth/                      dependencies.py, permissions.py, schemas.py — empty stubs
+├── backend/                       FastAPI service
+│   ├── main.py                    App entrypoint, router registration, CORS
+│   ├── api/v1/                    auth, report_templates, daily_reports, dashboards routers
+│   ├── auth/                      JWT verification (JWKS), org-role permission checks
+│   ├── calculations/              registry, dependency graph, evaluator — the calc engine
+│   ├── services/                  report_service, dashboard_service, template_service
+│   ├── repositories/              DB access for daily reports/templates
+│   ├── schemas/                   Pydantic request/response models
 │   ├── database/
-│   │   ├── connection.py          SQLAlchemy engine/session, reads DATABASE_URL from .env
+│   │   ├── connection.py          SQLAlchemy engine/session, reads DATABASE_URL
 │   │   ├── base.py                Declarative Base
-│   │   └── models/                company.py, project.py, user.py — empty, no tables yet
+│   │   └── models/                organization, membership, profile, template, daily_report, expense_category, audit
+│   ├── alembic/                   Migrations (schema, seed data, FK fixes)
+│   ├── scripts/                   One-off admin scripts (e.g. grant_org_owner.py)
+│   ├── tests/                     pytest — calculation engine unit tests
 │   ├── requirement.txt            Python dependencies
-│   └── .env.example               Template for the required environment variables
+│   ├── runtime.txt                Pinned Python version (Render)
+│   └── .env.example               Template for required environment variables
 │
+├── render.yaml                    Render Blueprint for the backend service
 ├── .gitignore
 └── README.md
 ```
@@ -122,9 +135,11 @@ MAARA-AI-Business-Manager/
 | Charts | Hand-built inline SVG components, no charting library |
 | Backend | FastAPI, Uvicorn |
 | ORM / DB driver | SQLAlchemy 2, `psycopg[binary]` (psycopg3) |
-| Migrations | Alembic (installed, not yet used — no migrations exist) |
+| Migrations | Alembic |
 | Database | Postgres, hosted on Supabase |
-| Planned auth | Supabase Auth |
+| Auth | Supabase Auth (JWT, verified server-side via JWKS) |
+| Frontend hosting | Vercel (root directory `frontend`) |
+| Backend hosting | Render (see `render.yaml`, root directory `backend`) |
 
 ## Getting started
 
@@ -136,9 +151,6 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-The frontend calls `VITE_API_URL` (defaults to `http://localhost:8000`) for
-login; everything else runs client-side against the mock dataset.
-
 ### Backend
 
 ```bash
@@ -148,37 +160,50 @@ python -m venv .venv
 pip install -r requirement.txt
 
 copy .env.example .env      # or `cp` on macOS/Linux — then fill in real values
+alembic upgrade head
 uvicorn main:app --reload --port 8000
 ```
 
-### Environment variables (`backend/.env`)
+### Environment variables
+
+**`backend/.env`**
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Postgres connection string (Supabase) |
+| `DATABASE_URL` | Postgres connection string (Supabase session pooler recommended) |
+| `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_ANON_KEY` | Public Supabase key, safe for client use |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Secret** — full-access key, server-side only, never expose to the frontend |
+| `SUPABASE_JWT_AUDIENCE` | Normally `authenticated` |
+| `CORS_ALLOW_ORIGINS` | Comma-separated list of allowed frontend origins |
 
-`backend/.env` is git-ignored. Copy `backend/.env.example` and fill in real
-values locally; never commit the real file.
+**`frontend/.env`**
 
-## Roadmap
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL` | Same Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Same public Supabase key |
+| `VITE_API_URL` | Backend base URL (`http://localhost:8000` locally, the Render URL in production) |
 
-- [ ] Real Supabase Auth wiring (replace the placeholder `/auth/login`)
-- [ ] Define the actual database models (`company`, `project`, `user`, and a
-      daily-report / expense-entry schema — the current `models/` files are empty)
-- [ ] First Alembic migration
-- [ ] Persist `DailyReportPage` submissions instead of holding them in local state
-- [ ] Replace `reportData.ts`'s mock dataset with real API-backed data once the
-      above lands, keeping the same computed-not-hardcoded approach
+Both `.env` files are git-ignored. Copy the `.env.example` in each folder and
+fill in real values locally; never commit the real files.
+
+## Deployment
+
+- **Frontend (Vercel):** Root Directory = `frontend`, Framework Preset = Vite,
+  Build Command = `npm run build`, Output Directory = `dist`. Set the three
+  `VITE_*` env vars above in the Vercel dashboard.
+- **Backend (Render):** deployed via the `render.yaml` Blueprint at the repo
+  root (Root Directory `backend`). Fill in the `sync: false` env vars in the
+  Render dashboard on first deploy; `CORS_ALLOW_ORIGINS` should include the
+  Vercel production URL.
 
 ## Contributing
 
 This project is meant to be worked on by multiple people, so a few ground rules:
 
 - Branch off `main`, open a PR — don't push directly to `main`.
-- If you touch `reportData.ts`, prefer adding to the dataset over hardcoding
-  numbers in a dashboard component — every dashboard is designed to compute
-  from shared data.
+- New calculated fields belong in template/rule config, not hardcoded in a
+  service or component — the calculation engine is generic on purpose.
 - Never commit `.env` or any real credentials. If you need a new environment
-  variable, add a placeholder entry to `backend/.env.example` too.
+  variable, add a placeholder entry to the relevant `.env.example` too.
