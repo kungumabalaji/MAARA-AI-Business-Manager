@@ -14,6 +14,11 @@ settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Vercel mints a fresh random hostname for every deployment/preview
+    # (e.g. maara-ai-business-manager-4e8ppq9gt.vercel.app) — matching those
+    # by pattern means CORS keeps working without editing CORS_ALLOW_ORIGINS
+    # on every deploy.
+    allow_origin_regex=r"^https://maara-ai-busine[\w-]*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
