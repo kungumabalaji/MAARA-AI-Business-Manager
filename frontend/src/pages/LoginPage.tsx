@@ -1,16 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-
-type LoginResponse = {
-  access_token?: string
-  refresh_token?: string
-  user?: {
-    email?: string
-  }
-  message?: string
-}
+import { supabase } from '../lib/supabaseClient'
 
 type LoginPageProps = {
   onLoginSuccess: (user: { email?: string }) => void
@@ -44,11 +34,18 @@ function LockIcon() {
 
 function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [mode, setMode] = useState<'closed' | 'email'>('closed')
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  function switchAuthMode(nextMode: 'signin' | 'signup') {
+    setAuthMode(nextMode)
+    setError(null)
+    setSuccess(null)
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -57,18 +54,34 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setSuccess(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      })
+      if (authMode === 'signup') {
+        const { data, error: authError } = await supabase.auth.signUp({ email, password })
 
-      const data: LoginResponse = await response.json()
+        if (authError) {
+          throw new Error(authError.message)
+        }
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Unable to sign you in right now.')
+        if (!data.session) {
+          // Email confirmation is required before this account can sign in.
+          setSuccess(`Almost there — we've sent a confirmation link to ${email}. Click it, then sign in below.`)
+          setAuthMode('signin')
+          setPassword('')
+          return
+        }
+
+        setSuccess('Account created. Your session is ready.')
+        setTimeout(() => {
+          onLoginSuccess({ email: data.user?.email })
+        }, 250)
+        setEmail('')
+        setPassword('')
+        return
+      }
+
+      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+
+      if (authError) {
+        throw new Error(authError.message)
       }
 
       setSuccess(`Welcome back${data.user?.email ? `, ${data.user.email}` : ''}. Your session is ready.`)
@@ -122,13 +135,13 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 <p>Built for scale. Designed for trust.</p>
               </div>
             </div>
-          </div>
 
-          <div className="hero-decoration" aria-hidden="true">
-            <div className="hero-ribbon-orbit hero-ribbon-orbit-one" />
-            <div className="hero-ribbon-orbit hero-ribbon-orbit-two" />
-            <img className="hero-logo" src="/m%20logo.png" alt="" />
-            <div className="hero-floor-glow" />
+            <div className="hero-decoration" aria-hidden="true">
+              <div className="hero-ribbon-orbit hero-ribbon-orbit-one" />
+              <div className="hero-ribbon-orbit hero-ribbon-orbit-two" />
+              <img className="hero-logo" src="/maraxdosanchutney.png" alt="mara X Dosa n Chutney" />
+              <div className="hero-floor-glow" />
+            </div>
           </div>
         </section>
 
@@ -136,7 +149,9 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
           <div className="auth-card">
             <img className="auth-logo" src="/logo-mark.png" alt="MAARA" />
             <h2>Welcome to MAARA</h2>
-            <p className="auth-subtitle">Sign in to access your workspace</p>
+            <p className="auth-subtitle">
+              {mode === 'email' && authMode === 'signup' ? 'Create an account to get started' : 'Sign in to access your workspace'}
+            </p>
 
             {mode === 'closed' ? (
               <div className="auth-actions">
@@ -179,7 +194,8 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="Enter your password"
+                    placeholder={authMode === 'signup' ? 'Create a password (min. 6 characters)' : 'Enter your password'}
+                    minLength={6}
                     required
                   />
                 </label>
@@ -188,7 +204,21 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 {success ? <p className="feedback success">{success}</p> : null}
 
                 <button type="submit" className="primary-cta" disabled={loading}>
-                  {loading ? 'Signing in...' : 'Sign In'}
+                  {loading
+                    ? authMode === 'signup'
+                      ? 'Creating account...'
+                      : 'Signing in...'
+                    : authMode === 'signup'
+                      ? 'Create Account'
+                      : 'Sign In'}
+                </button>
+
+                <button
+                  type="button"
+                  className="auth-toggle-link"
+                  onClick={() => switchAuthMode(authMode === 'signup' ? 'signin' : 'signup')}
+                >
+                  {authMode === 'signup' ? 'Already have an account? Sign in' : "New to MAARA? Create an account"}
                 </button>
               </form>
             )}

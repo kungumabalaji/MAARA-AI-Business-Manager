@@ -29,7 +29,8 @@
     radial-gradient(circle at 18% 18%, rgba(73, 97, 255, 0.14), transparent 24%),
     radial-gradient(circle at 80% 78%, rgba(121, 59, 255, 0.1), transparent 24%),
     linear-gradient(140deg, #04030b 0%, #090513 50%, #130a25 100%);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .login-shell::before {
@@ -142,7 +143,6 @@
   justify-content: center;
   padding: clamp(8px, 1.2vh, 20px) 0;
   color: var(--text-primary);
-  overflow: hidden;
 }
 
 .left-content {
@@ -204,11 +204,9 @@
 
 .hero-decoration {
   position: relative;
-  position: absolute;
-  width: clamp(650px, 48vw, 950px);
-  height: clamp(420px, 54vh, 760px);
-  left: clamp(-300px, -14vw, -170px);
-  bottom: clamp(-180px, -12vh, -80px);
+  width: min(100%, clamp(620px, 54vw, 940px));
+  height: clamp(230px, 30vh, 360px);
+  margin-top: clamp(14px, 2vh, 24px);
   z-index: 0;
   pointer-events: none;
   user-select: none;
@@ -219,6 +217,9 @@
   left: 0;
   bottom: 0;
   width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left bottom;
   filter: drop-shadow(0 38px 68px rgba(109, 72, 255, 0.24));
 }
 
@@ -573,6 +574,22 @@
   color: var(--brand-violet);
 }
 
+.auth-toggle-link {
+  justify-self: center;
+  margin-top: 4px;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-toggle-link:hover {
+  color: var(--brand-violet);
+}
+
 .page-footer {
   text-align: center;
   color: rgba(255, 255, 255, 0.76);
@@ -727,10 +744,12 @@
   }
 
   .hero-decoration {
-    width: clamp(520px, 64vw, 760px);
-    height: clamp(340px, 42vh, 520px);
-    left: clamp(-240px, -18vw, -120px);
-    bottom: clamp(-160px, -12vh, -70px);
+    position: relative;
+    width: min(100%, 520px);
+    height: clamp(180px, 30vh, 280px);
+    left: 0;
+    bottom: 0;
+    margin-top: 20px;
   }
 
   .hero-security {
@@ -1248,6 +1267,16 @@
   font: inherit;
   color: #111827;
   font-size: 0.84rem;
+}
+
+.report-mini-computed {
+  display: flex;
+  align-items: center;
+  background: rgba(23, 28, 44, 0.04);
+  border-style: dashed;
+  color: #374151;
+  font-weight: 700;
+  cursor: default;
 }
 
 .report-add-expense {
@@ -2098,6 +2127,11 @@
   color: var(--accent-income);
   font-weight: 800;
   font-size: 0.98rem;
+}
+
+.profit-breakdown-row.is-profit.is-loss {
+  background: var(--accent-expense-soft);
+  color: var(--accent-expense);
 }
 
 .profit-insights {

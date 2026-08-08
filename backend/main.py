@@ -1,40 +1,33 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-from database.connection import SessionLocal
+from api.v1.auth import router as auth_router
+from api.v1.daily_reports import router as daily_reports_router
+from api.v1.dashboards import router as dashboards_router
+from api.v1.report_templates import router as report_templates_router
+from core.config import get_settings
 
 app = FastAPI(title="MAARA AI Business Manager")
 
+settings = get_settings()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+app.include_router(report_templates_router)
+app.include_router(daily_reports_router)
+app.include_router(dashboards_router)
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
 
-
-@app.post("/auth/login")
-def login(payload: LoginRequest):
-    db = SessionLocal()
-    try:
-        # Placeholder auth flow. Replace this with your real Supabase auth integration later.
-        if payload.email and payload.password:
-            return {
-                "message": "Login successful",
-                "access_token": "demo-token",
-                "refresh_token": "demo-refresh-token",
-                "user": {"email": payload.email},
-            }
-        return {"message": "Invalid credentials"}, 400
-    finally:
-        db.close()
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":

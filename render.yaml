@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: maara-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirement.txt
+    # Applies any new migrations on every deploy — safe to re-run, Alembic
+    # skips anything already applied.
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        value: authenticated
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
