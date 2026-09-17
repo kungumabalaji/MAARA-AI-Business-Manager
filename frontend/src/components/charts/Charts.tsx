@@ -63,18 +63,25 @@ export function MultiLineTrend({
   const innerWidth = width - paddingLeft - 14
   const innerHeight = height - paddingTop - paddingBottom
 
+  // Range must cover the lowest value too, not just the highest — a series
+  // that dips negative (e.g. a loss month) needs its own headroom below zero,
+  // otherwise it gets pushed off the bottom of the chart and flattens there.
   const allValues = data.flatMap((point) => series.map((s) => point.values[s.key] ?? 0))
-  const maxValue = Math.max(...allValues, 1)
-  const niceMax = Math.ceil(maxValue / 5) * 5 || 1
+  const maxValue = Math.max(...allValues, 0)
+  const minValue = Math.min(...allValues, 0)
+  const niceMax = Math.ceil(maxValue / 5) * 5 || (maxValue > 0 ? maxValue : 1)
+  const niceMin = Math.floor(minValue / 5) * 5
+  const valueRange = niceMax - niceMin || 1
+  const crossesZero = niceMin < 0 && niceMax > 0
 
   const xFor = (i: number) => paddingLeft + (data.length === 1 ? 0 : (i / (data.length - 1)) * innerWidth)
-  const yFor = (value: number) => paddingTop + innerHeight - (value / niceMax) * innerHeight
+  const yFor = (value: number) => paddingTop + innerHeight - ((value - niceMin) / valueRange) * innerHeight
 
   function pointsFor(key: string) {
     return data.map((point, i) => `${xFor(i)},${yFor(point.values[key] ?? 0)}`).join(' ')
   }
 
-  const gridLines = [0, 0.25, 0.5, 0.75, 1]
+  const gridSteps = [0, 0.25, 0.5, 0.75, 1]
   const clampedHover = hoverIndex === null ? null : Math.min(Math.max(hoverIndex, 0), data.length - 1)
 
   return (
@@ -92,17 +99,22 @@ export function MultiLineTrend({
           setHoverIndex(Math.min(Math.max(index, 0), data.length - 1))
         }}
       >
-        {gridLines.map((g) => {
-          const y = paddingTop + innerHeight * (1 - g)
+        {gridSteps.map((g) => {
+          const value = niceMin + valueRange * g
+          const y = yFor(value)
           return (
             <g key={g}>
               <line x1={paddingLeft} x2={width - 14} y1={y} y2={y} className="chart-gridline" />
               <text x={paddingLeft - 8} y={y + 4} className="chart-axis-label" textAnchor="end">
-                {formatValue(niceMax * g)}
+                {formatValue(value)}
               </text>
             </g>
           )
         })}
+
+        {crossesZero ? (
+          <line x1={paddingLeft} x2={width - 14} y1={yFor(0)} y2={yFor(0)} className="chart-zero-line" />
+        ) : null}
 
         {series.map((s) => (
           <polyline

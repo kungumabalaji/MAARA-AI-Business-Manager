@@ -8,7 +8,6 @@ Decimal values, deliberately kept that way so it's trivial to unit test.
 from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
@@ -39,7 +38,7 @@ class Operand(BaseModel):
     const: Decimal | None = None
 
     @model_validator(mode="after")
-    def _exactly_one_of_ref_or_const(self) -> "Operand":
+    def _exactly_one_of_ref_or_const(self) -> Operand:
         if (self.ref is None) == (self.const is None):
             raise ValueError("an operand must set exactly one of 'ref' or 'const'")
         return self

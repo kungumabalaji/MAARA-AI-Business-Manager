@@ -3,7 +3,15 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,13 +56,13 @@ class ReportTemplate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
 
-    organization: Mapped["Organization"] = relationship(back_populates="report_templates")
-    versions: Mapped[list["ReportTemplateVersion"]] = relationship(
+    organization: Mapped[Organization] = relationship(back_populates="report_templates")
+    versions: Mapped[list[ReportTemplateVersion]] = relationship(
         back_populates="template",
         cascade="all, delete-orphan",
         foreign_keys="ReportTemplateVersion.report_template_id",
     )
-    current_version: Mapped["ReportTemplateVersion | None"] = relationship(
+    current_version: Mapped[ReportTemplateVersion | None] = relationship(
         foreign_keys=[current_version_id], post_update=True, viewonly=False
     )
 
@@ -85,16 +93,16 @@ class ReportTemplateVersion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
 
-    template: Mapped["ReportTemplate"] = relationship(back_populates="versions", foreign_keys=[report_template_id])
-    sections: Mapped[list["ReportSection"]] = relationship(
+    template: Mapped[ReportTemplate] = relationship(back_populates="versions", foreign_keys=[report_template_id])
+    sections: Mapped[list[ReportSection]] = relationship(
         back_populates="template_version",
         cascade="all, delete-orphan",
         order_by="ReportSection.display_order",
     )
-    calculation_rules: Mapped[list["CalculationRule"]] = relationship(
+    calculation_rules: Mapped[list[CalculationRule]] = relationship(
         back_populates="template_version", cascade="all, delete-orphan"
     )
-    daily_reports: Mapped[list["DailyReport"]] = relationship(back_populates="template_version")
+    daily_reports: Mapped[list[DailyReport]] = relationship(back_populates="template_version")
 
     def __repr__(self) -> str:
         return f"<ReportTemplateVersion template={self.report_template_id} v{self.version_number} {self.status}>"
@@ -116,8 +124,8 @@ class ReportSection(Base, UUIDPrimaryKeyMixin):
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
-    template_version: Mapped["ReportTemplateVersion"] = relationship(back_populates="sections")
-    fields: Mapped[list["ReportField"]] = relationship(
+    template_version: Mapped[ReportTemplateVersion] = relationship(back_populates="sections")
+    fields: Mapped[list[ReportField]] = relationship(
         back_populates="section", cascade="all, delete-orphan", order_by="ReportField.display_order"
     )
 
@@ -149,8 +157,8 @@ class ReportField(Base, UUIDPrimaryKeyMixin):
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     field_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
 
-    section: Mapped["ReportSection"] = relationship(back_populates="fields")
-    values: Mapped[list["DailyReportValue"]] = relationship(back_populates="field")
+    section: Mapped[ReportSection] = relationship(back_populates="fields")
+    values: Mapped[list[DailyReportValue]] = relationship(back_populates="field")
 
     def __repr__(self) -> str:
         return f"<ReportField {self.key}>"
@@ -178,7 +186,7 @@ class CalculationRule(Base, UUIDPrimaryKeyMixin):
     operation: Mapped[str] = mapped_column(String(20), nullable=False)
     operands: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    template_version: Mapped["ReportTemplateVersion"] = relationship(back_populates="calculation_rules")
+    template_version: Mapped[ReportTemplateVersion] = relationship(back_populates="calculation_rules")
 
     def __repr__(self) -> str:
         return f"<CalculationRule {self.key}={self.operation}>"

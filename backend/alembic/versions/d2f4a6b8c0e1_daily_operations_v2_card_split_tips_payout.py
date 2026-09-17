@@ -1,58 +1,52 @@
-"""seed dosa n chutney org and template
+"""daily operations template v2: card till/machine split, tips, payout
 
-Revision ID: b6827bcf3c3b
-Revises: 6a5356d68eec
-Create Date: 2026-08-08 15:05:00.000000
+Revision ID: d2f4a6b8c0e1
+Revises: c1a2b3d4e5f6
+Create Date: 2026-09-13
 
-Creates the "Dosa n Chutney" organization and its Daily Operations Ledger
-template as a published version 1 — proof the generic engine reproduces the
-pilot business's current UI exactly, with zero business-specific columns
-anywhere in the schema. Also seeds their own custom expense categories
-(Groceries, Cash & Carry, delivery commissions, ...) on top of the universal
-system defaults from the previous migration.
+Adds a version 2 of the "daily-operations" template for Dosa n Chutney:
+splits the single card_sales field into card_sales_till / card_sales_machine,
+and adds two new (non-total-affecting) fields, tips_on_card and payout, to
+match the business's real sales-tracker columns.
 
-No organization_members row is created here — there's no real Supabase auth
-user yet to attach as owner. See scripts/grant_org_owner.py for that step,
-run once after the first real person signs up.
+Template versions are immutable once reports are pinned to them
+(daily_reports.template_version_id), so this is a new version rather than an
+edit of version 1 — existing/historical reports keep resolving against v1
+untouched. report_templates.current_version_id is repointed at v2 so new
+Saves (and edits of reports already on v2) use the new fields.
+
+total_sales' SUM only lists card_sales_till/card_sales_machine plus the other
+channel keys — tips_on_card and payout are deliberately left out, same
+treatment as opening_cash/misc_income in v1, so they don't inflate the sales
+total.
+
+Reversible: downgrade repoints current_version_id back to v1 and deletes the
+v2 rows. This will fail if any daily_reports already reference v2 — those
+reports must be reassigned or removed first.
 """
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime, timezone
-from typing import Union
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-# revision identifiers, used by Alembic.
-revision: str = 'b6827bcf3c3b'
-down_revision: str | Sequence[str] | None = '6a5356d68eec'
+revision: str = "d2f4a6b8c0e1"
+down_revision: str | Sequence[str] | None = "c1a2b3d4e5f6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-ORGANIZATION_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 TEMPLATE_ID = uuid.UUID("22222222-2222-4222-8222-222222222222")
-VERSION_ID = uuid.UUID("33333333-3333-4333-8333-333333333333")
+VERSION_ID = uuid.UUID("44444444-4444-4444-8444-444444444444")
 
 SECTION_SALES_ID = uuid.uuid4()
 SECTION_EXPENSES_ID = uuid.uuid4()
 SECTION_SUMMARY_ID = uuid.uuid4()
 
-organizations = sa.table(
-    "organizations",
-    sa.column("id", postgresql.UUID(as_uuid=True)),
-    sa.column("name", sa.String),
-    sa.column("slug", sa.String),
-    sa.column("currency", sa.String),
-)
-
 report_templates = sa.table(
     "report_templates",
     sa.column("id", postgresql.UUID(as_uuid=True)),
-    sa.column("organization_id", postgresql.UUID(as_uuid=True)),
-    sa.column("key", sa.String),
-    sa.column("name", sa.String),
     sa.column("current_version_id", postgresql.UUID(as_uuid=True)),
 )
 
@@ -95,64 +89,30 @@ calculation_rules = sa.table(
     sa.column("operands", postgresql.JSONB),
 )
 
-expense_categories = sa.table(
-    "expense_categories",
-    sa.column("id", postgresql.UUID(as_uuid=True)),
-    sa.column("organization_id", postgresql.UUID(as_uuid=True)),
-    sa.column("key", sa.String),
-    sa.column("label", sa.String),
-    sa.column("is_fixed_cost", sa.Boolean),
-    sa.column("display_order", sa.Integer),
-)
-
 # (key, label, required)
 SALES_FIELDS = [
     ("opening_cash", "Opening Cash", False),
-    ("card_sales", "Card Sales", False),
+    ("card_sales_till", "Card Sales (Till)", False),
+    ("card_sales_machine", "Card Sales (Machine)", False),
     ("cash_sales", "Cash Sales", False),
     ("uber_eats", "Uber Eats Sales", False),
     ("just_eat", "Just Eat Sales", False),
     ("deliveroo", "Deliveroo Sales", False),
     ("other_sales", "Other Sales", False),
+    ("tips_on_card", "Tips on Card", False),
+    ("payout", "Payout", False),
     ("misc_income", "Misc Income", False),
 ]
 
-SALES_CHANNEL_KEYS = ["card_sales", "cash_sales", "uber_eats", "just_eat", "deliveroo", "other_sales"]
-
-# Dosa n Chutney's own categories, layered on top of the universal system
-# defaults seeded in the previous migration.
-DOSA_EXPENSE_CATEGORIES = [
-    ("scottish_power", "Scottish Power (Gas & Electric)", True),
-    ("groceries", "Groceries", False),
-    ("cash_and_carry", "Cash & Carry", False),
-    ("beer_purchases", "Beer Purchases", False),
-    ("meat_bills", "Meat Bills", False),
-    ("frozen_food_bills", "Frozen Food Bills", False),
-    ("biffa_waste", "Biffa Waste", False),
-    ("deliveroo_commission", "Deliveroo Commission", False),
-    ("just_eat_commission", "Just Eat Commission", False),
-    ("uber_eats_commission", "Uber Eats Commission", False),
-]
+# card_sales_till is a till-recorded reconciliation figure, not revenue — the
+# card machine's own reading is what actually feeds total_sales (verified
+# against dosa-chutney-sales-june.csv: Total Sales = Machine + Cash + delivery
+# platforms + Website/Others; Till doesn't fit that formula for any row).
+SALES_CHANNEL_KEYS = ["card_sales_machine", "cash_sales", "uber_eats", "just_eat", "deliveroo", "other_sales"]
 
 
 def upgrade() -> None:
-    op.bulk_insert(
-        organizations,
-        [{"id": ORGANIZATION_ID, "name": "Dosa n Chutney", "slug": "dosa-n-chutney", "currency": "GBP"}],
-    )
-
-    op.bulk_insert(
-        report_templates,
-        [
-            {
-                "id": TEMPLATE_ID,
-                "organization_id": ORGANIZATION_ID,
-                "key": "daily-operations",
-                "name": "Daily Operations Ledger",
-                "current_version_id": None,
-            }
-        ],
-    )
+    from datetime import UTC, datetime
 
     op.bulk_insert(
         report_template_versions,
@@ -160,7 +120,7 @@ def upgrade() -> None:
             {
                 "id": VERSION_ID,
                 "report_template_id": TEMPLATE_ID,
-                "version_number": 1,
+                "version_number": 2,
                 "status": "published",
                 "published_at": datetime.now(UTC),
             }
@@ -189,10 +149,9 @@ def upgrade() -> None:
         }
         for order, (key, label, required) in enumerate(SALES_FIELDS, start=1)
     ]
-    total_sales_field_id = uuid.uuid4()
     sales_field_rows.append(
         {
-            "id": total_sales_field_id,
+            "id": uuid.uuid4(),
             "section_id": SECTION_SALES_ID,
             "key": "total_sales",
             "label": "Total Sales",
@@ -276,26 +235,17 @@ def upgrade() -> None:
         .values(current_version_id=VERSION_ID)
     )
 
-    op.bulk_insert(
-        expense_categories,
-        [
-            {
-                "id": uuid.uuid4(),
-                "organization_id": ORGANIZATION_ID,
-                "key": key,
-                "label": label,
-                "is_fixed_cost": is_fixed_cost,
-                "display_order": order,
-            }
-            for order, (key, label, is_fixed_cost) in enumerate(DOSA_EXPENSE_CATEGORIES, start=1)
-        ],
-    )
-
 
 def downgrade() -> None:
-    op.execute(sa.delete(expense_categories).where(expense_categories.c.organization_id == ORGANIZATION_ID))
     op.execute(
-        sa.update(report_templates).where(report_templates.c.id == TEMPLATE_ID).values(current_version_id=None)
+        sa.update(report_templates).where(report_templates.c.id == TEMPLATE_ID).values(
+            current_version_id=sa.select(report_template_versions.c.id)
+            .where(
+                report_template_versions.c.report_template_id == TEMPLATE_ID,
+                report_template_versions.c.version_number == 1,
+            )
+            .scalar_subquery()
+        )
     )
     op.execute(sa.delete(calculation_rules).where(calculation_rules.c.template_version_id == VERSION_ID))
     op.execute(
@@ -309,5 +259,3 @@ def downgrade() -> None:
         )
     )
     op.execute(sa.delete(report_template_versions).where(report_template_versions.c.id == VERSION_ID))
-    op.execute(sa.delete(report_templates).where(report_templates.c.id == TEMPLATE_ID))
-    op.execute(sa.delete(organizations).where(organizations.c.id == ORGANIZATION_ID))

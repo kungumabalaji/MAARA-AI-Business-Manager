@@ -13,7 +13,13 @@ from sqlalchemy.orm import Session
 
 from calculations.errors import CalculationError
 from calculations.evaluator import FieldSpec, RuleSpec, validate_rules
-from database.models import CalculationRule, Organization, ReportField, ReportSection, ReportTemplate, ReportTemplateVersion
+from database.models import (
+    CalculationRule,
+    ReportField,
+    ReportSection,
+    ReportTemplate,
+    ReportTemplateVersion,
+)
 from repositories import template_repository
 from schemas.template import TemplateVersionCreate
 

@@ -10,7 +10,8 @@ enforced referential integrity or cleaned it up when an auth user was deleted.
 This adds that constraint, discovered by actually deleting a real test user
 end-to-end and finding the orphaned profile left behind.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
 import sqlalchemy as sa
 
@@ -18,9 +19,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '6a5356d68eec'
-down_revision: Union[str, Sequence[str], None] = '58a177b1c0cd'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '58a177b1c0cd'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

@@ -28,8 +28,8 @@ class OrganizationMember(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
 
-    organization: Mapped["Organization"] = relationship(back_populates="members")
-    profile: Mapped["Profile"] = relationship(back_populates="memberships")
+    organization: Mapped[Organization] = relationship(back_populates="members")
+    profile: Mapped[Profile] = relationship(back_populates="memberships")
 
     def __repr__(self) -> str:
         return f"<OrganizationMember org={self.organization_id} user={self.user_id} role={self.role}>"

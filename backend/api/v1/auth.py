@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from auth.dependencies import get_current_user, get_db
 from auth.schemas import AuthenticatedUser, MeResponse, OrganizationMembershipOut, ProfileOut
 from database.models import Organization, OrganizationMember, Profile

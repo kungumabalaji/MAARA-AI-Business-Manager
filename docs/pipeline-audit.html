@@ -1,0 +1,1010 @@
+<title>MAARA System Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+<style>
+  :root {
+    --paper: #f5f4fb;
+    --surface: #ffffff;
+    --surface-2: #efedf9;
+    --ink: #1a1b2b;
+    --ink-soft: #53546b;
+    --ink-faint: #82839b;
+    --hair: #e4e2f0;
+    --accent: #5b3df5;
+    --accent-ink: #4327d1;
+    --accent-soft: #ece8fe;
+    --income: #0f8a5a;
+    --expense: #bd5f09;
+    --danger: #cf2b3c;
+    --shadow: 0 1px 2px rgba(26,27,43,.04), 0 12px 32px -12px rgba(26,27,43,.14);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #101019; --surface: #191926; --surface-2: #21212f;
+      --ink: #e9e8f3; --ink-soft: #abacc4; --ink-faint: #7c7d97; --hair: #2b2b3e;
+      --accent: #9d88ff; --accent-ink: #b6a6ff; --accent-soft: #241f42;
+      --income: #3ec78f; --expense: #e79650; --danger: #ff6b76;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 16px 40px -16px rgba(0,0,0,.55);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #101019; --surface: #191926; --surface-2: #21212f;
+    --ink: #e9e8f3; --ink-soft: #abacc4; --ink-faint: #7c7d97; --hair: #2b2b3e;
+    --accent: #9d88ff; --accent-ink: #b6a6ff; --accent-soft: #241f42;
+    --income: #3ec78f; --expense: #e79650; --danger: #ff6b76;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 16px 40px -16px rgba(0,0,0,.55);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 48px); }
+  .layout { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 1120px) { .layout { grid-template-columns: 216px minmax(0,1fr); gap: 56px; } }
+
+  nav.toc { display: none; }
+  @media (min-width: 1120px) {
+    nav.toc {
+      display: block; position: sticky; top: 0; align-self: start;
+      max-height: 100vh; overflow-y: auto; padding: 40px 0;
+      font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; line-height: 1.4;
+    }
+    nav.toc a { display: flex; gap: 9px; padding: 4px 0; color: var(--ink-faint); text-decoration: none; border: none; }
+    nav.toc a:hover { color: var(--accent); }
+    nav.toc a .n { opacity: .55; }
+  }
+
+  main { padding: 40px 0 120px; min-width: 0; }
+
+  header.doc { padding: 8px 0 40px; border-bottom: 1px solid var(--hair); margin-bottom: 48px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 14px;
+  }
+  h1 { font-size: clamp(2.1rem, 5.5vw, 3rem); line-height: 1.06; font-weight: 700; letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 64ch; margin: 0 0 26px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; padding: 5px 10px;
+    border-radius: 6px; background: var(--surface); border: 1px solid var(--hair); color: var(--ink-soft);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  section { margin: 0 0 60px; scroll-margin-top: 24px; }
+  .sec-head { display: flex; gap: 16px; align-items: baseline; margin: 0 0 18px; }
+  .sec-head .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; color: var(--accent-ink); padding-top: 6px; }
+  h2 { font-size: clamp(1.4rem, 3.2vw, 1.8rem); font-weight: 600; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 30px 0 12px; }
+  h4 { font-size: .92rem; font-weight: 600; margin: 22px 0 8px; color: var(--ink-soft); font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .03em; text-transform: uppercase; }
+  p { margin: 0 0 15px; max-width: 70ch; }
+  .muted { color: var(--ink-soft); }
+  a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent-ink) 30%, transparent); }
+  a:hover { border-bottom-color: var(--accent-ink); }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .84em; background: var(--surface-2); padding: .12em .4em; border-radius: 4px; color: var(--ink); }
+  strong { font-weight: 600; }
+  ul, ol { margin: 0 0 15px; padding-left: 22px; max-width: 70ch; }
+  li { margin: 5px 0; }
+
+  .card { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 20px 22px; box-shadow: var(--shadow); }
+  .two-col { display: grid; gap: 14px; }
+  @media (min-width: 720px) { .two-col { grid-template-columns: 1fr 1fr; } }
+
+  /* layered stack */
+  .stack { display: grid; gap: 10px; }
+  .tier {
+    display: grid; grid-template-columns: 132px 1fr; gap: 18px; align-items: center;
+    background: var(--surface); border: 1px solid var(--hair); border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 15px 20px;
+  }
+  .tier .label { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+  .tier .body { font-size: .93rem; }
+  @media (max-width: 560px) { .tier { grid-template-columns: 1fr; gap: 5px; } }
+
+  /* flow */
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+  .flow .node {
+    flex: 1 1 128px; background: var(--surface); border: 1px solid var(--hair); border-radius: 10px;
+    padding: 11px 13px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .flow .node .k { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent-ink); }
+  .flow .node .v { font-size: .8rem; color: var(--ink-soft); }
+  .flow .node b { color: var(--ink); font-weight: 600; font-size: .88rem; }
+
+  /* steps */
+  ol.steps { list-style: none; padding: 0; counter-reset: s; max-width: none; }
+  ol.steps > li {
+    counter-increment: s; display: grid; grid-template-columns: 32px 1fr; gap: 15px;
+    padding: 15px 0; border-top: 1px solid var(--hair);
+  }
+  ol.steps > li::before { content: counter(s, decimal-leading-zero); font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--accent-ink); padding-top: 3px; }
+  ol.steps .loc { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: var(--ink-faint); display: block; margin-top: 4px; }
+  ol.steps p { margin: 0; max-width: none; }
+
+  /* tables */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: .87rem; }
+  th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 500; white-space: nowrap;
+    position: sticky; top: 0; background: var(--surface);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code { font-size: .82em; white-space: nowrap; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* pills */
+  .pill {
+    display: inline-block; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px;
+    letter-spacing: .04em; text-transform: uppercase; padding: 3px 7px; border-radius: 999px;
+    white-space: nowrap; border: 1px solid transparent;
+  }
+  .pill.ok { background: color-mix(in srgb, var(--income) 14%, transparent); color: var(--income); border-color: color-mix(in srgb, var(--income) 30%, transparent); }
+  .pill.warn { background: color-mix(in srgb, var(--expense) 14%, transparent); color: var(--expense); border-color: color-mix(in srgb, var(--expense) 30%, transparent); }
+  .pill.debt { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+  .pill.new { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 10px 10px 0; padding: 15px 20px; margin: 18px 0; font-size: .94rem; }
+  .callout.debt { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 9%, transparent); }
+  .callout p { max-width: none; }
+  .callout .t { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; margin: 0 0 6px; color: var(--accent-ink); }
+  .callout.debt .t { color: var(--danger); }
+
+  pre.tree {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; line-height: 1.55;
+    background: var(--surface); border: 1px solid var(--hair); border-radius: 12px;
+    padding: 18px 20px; overflow-x: auto; color: var(--ink-soft); margin: 0;
+  }
+  pre.tree b { color: var(--ink); font-weight: 600; }
+  pre.tree i { color: var(--ink-faint); font-style: normal; }
+
+  .prompt { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; overflow: hidden; }
+  .prompt .bar {
+    display: flex; justify-content: space-between; align-items: center; padding: 10px 16px;
+    border-bottom: 1px solid var(--hair); font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; color: var(--ink-faint); letter-spacing: .04em;
+  }
+  .prompt button {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .06em;
+    text-transform: uppercase; background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 5px 12px; cursor: pointer;
+  }
+  .prompt button:active { transform: translateY(1px); }
+  .prompt pre {
+    margin: 0; padding: 18px 16px; overflow-x: auto; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px; line-height: 1.65; color: var(--ink); white-space: pre-wrap; word-break: break-word;
+  }
+
+  footer { border-top: 1px solid var(--hair); padding-top: 22px; color: var(--ink-faint); font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; }
+
+  /* diagrams */
+  figure { margin: 22px 0; }
+  figure svg { max-width: 100%; height: auto; display: block; color: var(--ink); background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 14px; }
+  figcaption { font-size: .85rem; color: var(--ink-soft); margin-top: 10px; max-width: 74ch; }
+  .dgm-box { fill: var(--surface); stroke: var(--ink-faint); stroke-width: 1.4; }
+  .dgm-box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+  .dgm-title { fill: var(--ink); font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 13px; font-weight: 600; }
+  .dgm-sub { fill: var(--ink-soft); font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; }
+  .dgm-edge { stroke: var(--ink-faint); stroke-width: 1.5; fill: none; }
+  .dgm-edge-accent { stroke: var(--accent); stroke-width: 2; fill: none; }
+  .dgm-elabel { fill: var(--ink-soft); font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; }
+  .dgm-fail { fill: var(--danger); font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; }
+  .dgm-fail-edge { stroke: var(--danger); stroke-width: 1.4; fill: none; stroke-dasharray: 3 3; }
+  .dgm-group { fill: none; stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 5 4; }
+  .dgm-grouplabel { fill: var(--ink-faint); font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: .1em; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap layout">
+  <nav class="toc" aria-label="Contents">
+    <a href="#overview"><span class="n">01</span> Overview &amp; stack</a>
+    <a href="#map"><span class="n">02</span> Repository map</a>
+    <a href="#arch"><span class="n">03</span> Architecture</a>
+    <a href="#write"><span class="n">04</span> Write path</a>
+    <a href="#read"><span class="n">05</span> Read path</a>
+    <a href="#templates"><span class="n">06</span> Template engine</a>
+    <a href="#calc"><span class="n">07</span> Calculation engine</a>
+    <a href="#data"><span class="n">08</span> Data model</a>
+    <a href="#auth"><span class="n">09</span> Auth &amp; tenancy</a>
+    <a href="#config"><span class="n">10</span> Config &amp; envs</a>
+    <a href="#deploy"><span class="n">11</span> Deploy pipeline</a>
+    <a href="#tests"><span class="n">12</span> Test coverage</a>
+    <a href="#debt"><span class="n">13</span> Known issues</a>
+    <a href="#prompt"><span class="n">14</span> Audit prompt</a>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <p class="eyebrow">System Design &amp; Architecture</p>
+      <h1>MAARA System Design</h1>
+      <p class="lede">Full architectural map of MAARA AI Business Manager &mdash; a multi-tenant daily
+      sales &amp; expense reporting platform for hospitality operators. Written from a complete read of
+      <code>backend/</code> and <code>frontend/src/</code> (~6,000 LOC), reflecting the repo after the
+      MODEL&nbsp;2 + range-filter change.</p>
+      <div class="chips">
+        <span class="chip"><b>Frontend</b> React 19 &middot; Vite 8 &middot; TypeScript 6</span>
+        <span class="chip"><b>Backend</b> FastAPI &middot; SQLAlchemy 2 &middot; Pydantic 2 &middot; Py 3.12</span>
+        <span class="chip"><b>Data</b> Supabase Postgres 15+ &middot; Alembic</span>
+        <span class="chip"><b>Auth</b> Supabase Auth &middot; JWT ES256 / JWKS</span>
+        <span class="chip"><b>Deploy</b> Vercel &middot; Render &middot; Supavisor pooler</span>
+      </div>
+    </header>
+
+    <!-- 01 -->
+    <section id="overview">
+      <div class="sec-head"><span class="num">01</span><h2>Overview &amp; stack</h2></div>
+      <p>One product, one live tenant today (<em>Dosa n Chutney</em>), built multi-tenant from the schema up.
+      A staff member fills a <strong>Daily Sales Report</strong> once (or several times) a day; managers read
+      <strong>Sales</strong>, <strong>Expenses</strong> and <strong>Profit</strong> dashboards that aggregate
+      every saved entry.</p>
+
+      <p>The defining architectural decision: <strong>a report's shape is data, not code.</strong> Templates,
+      sections, fields and calculation formulas all live in the database as versioned rows. The backend has a
+      small safe interpreter (<code>calculations/</code>) that executes those formulas. Adding a new report type
+      &mdash; or a new business with a completely different daily sheet &mdash; is a data operation, not a deploy.</p>
+
+      <div class="two-col">
+        <div class="card">
+          <h4 style="margin-top:0">Frontend</h4>
+          <ul style="margin:0">
+            <li>React 19 + Vite, TypeScript, no router (one <code>App</code> state gate)</li>
+            <li><code>@supabase/supabase-js</code> holds the session; token attached per request</li>
+            <li>Charts hand-built in SVG/CSS &mdash; zero charting deps</li>
+            <li>State: <code>useState</code> + <code>useEffect</code> + <code>fetch</code>. No Redux/Zustand/React-Query</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4 style="margin-top:0">Backend</h4>
+          <ul style="margin:0">
+            <li>FastAPI, 4 routers, dependency-injected auth + DB session</li>
+            <li>Layered: <code>api</code> &rarr; <code>services</code> &rarr; <code>repositories</code> &rarr; <code>models</code></li>
+            <li>SQLAlchemy 2 ORM, <code>psycopg</code> (v3) driver, Alembic migrations</li>
+            <li>Calculation engine is a standalone pure library (no DB, no <code>eval</code>)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="map">
+      <div class="sec-head"><span class="num">02</span><h2>Repository map</h2></div>
+<pre class="tree">
+<b>backend/</b>
+  <b>main.py</b>                <i>FastAPI app, CORS, router registration, /health</i>
+  <b>core/config.py</b>         <i>Pydantic Settings — Supabase URL, JWT audience, CORS origins</i>
+  <b>auth/</b>
+    dependencies.py       <i>get_current_user (JWKS verify), get_db (scoped session)</i>
+    permissions.py        <i>get_membership, require_role — org + role gating</i>
+    schemas.py            <i>AuthenticatedUser, MeResponse</i>
+  <b>api/v1/</b>
+    auth.py              <i>GET /me</i>
+    daily_reports.py     <i>GET + PUT /by-date/{date}</i>
+    dashboards.py        <i>8 read endpoints (sales/expenses/profit)</i>
+    report_templates.py  <i>6 template CRUD endpoints (admin)</i>
+  <b>services/</b>
+    report_service.py    <i>orchestrates a save: validate → create → calc → commit</i>
+    dashboard_service.py <i>read-side aggregation, group-by-date</i>
+    template_service.py  <i>draft a version, publish (runs validate_rules)</i>
+  <b>repositories/</b>
+    daily_report_repository.py  <i>get_by_date (latest), create_report, upsert_values, replace_expenses</i>
+    template_repository.py      <i>org-scoped template/version reads</i>
+  <b>calculations/</b>            <i>the formula interpreter — pure, no DB</i>
+    registry.py          <i>closed operand grammar + 9 pure operations</i>
+    evaluator.py         <i>validate_rules (once) / evaluate (per save)</i>
+    graph.py             <i>topological_order — DFS ordering + cycle detection</i>
+    errors.py            <i>typed CalculationError hierarchy</i>
+  <b>database/</b>
+    connection.py        <i>engine, SessionLocal, normalize_database_url</i>
+    base.py              <i>Declarative Base + UUID/Timestamp mixins</i>
+    models/              <i>13 tables across 7 files</i>
+  <b>schemas/</b>              <i>Pydantic request/response contracts</i>
+  <b>alembic/versions/</b>      <i>5 migrations (2 schema, 2 seed, 1 MODEL 2)</i>
+  <b>tests/unit/</b>            <i>test_calculations.py — 20 tests, calc engine only</i>
+  requirement.txt · requirements-dev.txt · ruff.toml · render.yaml · Dockerfile*
+
+<b>frontend/src/</b>
+  <b>App.tsx</b>                <i>session gate: Login ↔ DailyReportPage</i>
+  <b>main.tsx</b>               <i>React root, StrictMode</i>
+  <b>lib/</b>
+    supabaseClient.ts    <i>createClient from VITE_ envs</i>
+    validation.ts        <i>isAcceptableNumberInput, parseAmount, MAX_MONEY</i>
+    dashboardRange.ts    <i>7/30/90/All-time range math</i>
+  <b>api/</b>
+    client.ts            <i>apiFetch — bearer token + error unwrap</i>
+    reportsApi.ts        <i>11 typed endpoint wrappers</i>
+    types.ts             <i>shared response types</i>
+  <b>pages/</b>
+    LoginPage.tsx        <i>Supabase email/password sign-in + sign-up</i>
+    DailyReportPage.tsx  <i>the entry form + org resolution + save</i>
+    SalesDashboard.tsx   <i>range-driven, computed client-side from sales/daily</i>
+    ExpenseDashboard.tsx <i>range-driven — daily + by-category + recent</i>
+    ProfitTracker.tsx    <i>monthly P&amp;L + daily cash reconciliation</i>
+  <b>components/</b>
+    charts/Charts.tsx    <i>BarTrend, MultiLineTrend, Donut, RankedBars</i>
+    DashboardRangeFilter.tsx
+  data/reportData.ts     <i>formatters (formatGBP, pctChange, labels)</i>
+</pre>
+    </section>
+
+    <!-- 03 -->
+    <section id="arch">
+      <div class="sec-head"><span class="num">03</span><h2>Architecture</h2></div>
+      <p>Five tiers. The client never reaches the database; the API never trusts an
+      <code>organization_id</code> from a request body; the browser holds the only long-lived credential.</p>
+
+      <figure>
+        <svg viewBox="0 0 800 604" role="img" aria-label="Component architecture: the browser sends an HTTPS request with a bearer JWT to FastAPI on Render; FastAPI verifies the token against Supabase Auth's cached JWKS keys out of band; FastAPI makes one service call passing the organization_id from the URL path; services and repositories run SQL that always filters by organization_id against Postgres on Supabase; a trigger on the Supabase-managed auth.users table writes the matching profiles row.">
+          <defs>
+            <marker id="a1n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)" />
+            </marker>
+            <marker id="a1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)" />
+            </marker>
+          </defs>
+
+          <!-- supabase-managed enclosure -->
+          <rect class="dgm-group" x="466" y="150" width="316" height="404" rx="12" />
+          <text class="dgm-grouplabel" x="478" y="144">SUPABASE-MANAGED</text>
+
+          <!-- spine boxes -->
+          <rect class="dgm-box" x="58" y="26" width="330" height="66" rx="9" />
+          <text class="dgm-title" x="223" y="52" text-anchor="middle">Browser &mdash; React SPA</text>
+          <text class="dgm-sub" x="223" y="72" text-anchor="middle">supabase-js holds the session (access + refresh token)</text>
+
+          <rect class="dgm-box-accent" x="58" y="168" width="330" height="86" rx="9" />
+          <text class="dgm-title" x="223" y="193" text-anchor="middle">FastAPI &nbsp;&middot;&nbsp; Render</text>
+          <text class="dgm-sub" x="223" y="212" text-anchor="middle">get_current_user &rarr; require_role(staff | admin)</text>
+          <text class="dgm-sub" x="223" y="228" text-anchor="middle">routers: auth &middot; daily-reports &middot; dashboards &middot; templates</text>
+          <text class="dgm-fail" x="223" y="244" text-anchor="middle">rejects 401 (bad token) &middot; 403 (wrong org)</text>
+
+          <rect class="dgm-box-accent" x="58" y="330" width="330" height="86" rx="9" />
+          <text class="dgm-title" x="223" y="355" text-anchor="middle">Services &nbsp;&middot;&nbsp; Repositories</text>
+          <text class="dgm-sub" x="223" y="374" text-anchor="middle">report_service &middot; dashboard_service &middot; template_service</text>
+          <text class="dgm-sub" x="223" y="390" text-anchor="middle">repositories = the only layer that writes SQL</text>
+          <text class="dgm-sub" x="223" y="406" text-anchor="middle">calculation engine &mdash; pure, no DB, no eval</text>
+
+          <rect class="dgm-box" x="58" y="492" width="330" height="70" rx="9" />
+          <text class="dgm-title" x="223" y="518" text-anchor="middle">Postgres &nbsp;&middot;&nbsp; Supabase</text>
+          <text class="dgm-sub" x="223" y="537" text-anchor="middle">Supavisor pooler &middot; 13 tables &middot; schema owned by Alembic</text>
+
+          <!-- side boxes -->
+          <rect class="dgm-box" x="486" y="182" width="282" height="58" rx="9" />
+          <text class="dgm-title" x="627" y="205" text-anchor="middle">Supabase Auth</text>
+          <text class="dgm-sub" x="627" y="223" text-anchor="middle">ES256 JWT signer</text>
+
+          <rect class="dgm-box" x="486" y="498" width="282" height="52" rx="9" />
+          <text class="dgm-title" x="627" y="519" text-anchor="middle">auth.users</text>
+          <text class="dgm-sub" x="627" y="536" text-anchor="middle">Supabase-managed table</text>
+
+          <!-- request-path edges (accent) -->
+          <line class="dgm-edge-accent" x1="223" y1="92" x2="223" y2="166" marker-end="url(#a1a)" />
+          <text class="dgm-elabel" x="234" y="122">HTTPS request</text>
+          <text class="dgm-elabel" x="234" y="136">Authorization: Bearer &lt;access_token&gt;</text>
+
+          <line class="dgm-edge-accent" x1="223" y1="254" x2="223" y2="328" marker-end="url(#a1a)" />
+          <text class="dgm-elabel" x="234" y="284">one service call</text>
+          <text class="dgm-elabel" x="234" y="298">organization_id read from the URL path</text>
+
+          <line class="dgm-edge-accent" x1="223" y1="416" x2="223" y2="490" marker-end="url(#a1a)" />
+          <text class="dgm-elabel" x="234" y="446">SQL &mdash; every statement filters</text>
+          <text class="dgm-elabel" x="234" y="460">WHERE organization_id = :org</text>
+
+          <!-- out-of-band edges (neutral) -->
+          <line class="dgm-edge" x1="486" y1="214" x2="390" y2="214" marker-end="url(#a1n)" />
+          <text class="dgm-elabel" x="438" y="200" text-anchor="middle">JWKS public keys</text>
+          <text class="dgm-elabel" x="438" y="212" text-anchor="middle">cached ~1h</text>
+
+          <line class="dgm-edge" x1="486" y1="524" x2="390" y2="524" marker-end="url(#a1n)" />
+          <text class="dgm-elabel" x="438" y="515" text-anchor="middle">AFTER INSERT trigger</text>
+          <text class="dgm-elabel" x="438" y="543" text-anchor="middle">&rarr; writes profiles row</text>
+
+          <!-- legend -->
+          <rect x="58" y="578" width="12" height="12" rx="2" fill="var(--accent)" />
+          <text class="dgm-sub" x="76" y="588">request path</text>
+          <line class="dgm-edge" x1="176" y1="584" x2="196" y2="584" />
+          <text class="dgm-sub" x="202" y="588">trust / trigger (out of band, not per-request)</text>
+        </svg>
+        <figcaption>Every request crosses three boundaries: the browser attaches a bearer JWT; FastAPI
+        checks it against Supabase's public keys (fetched once, cached &mdash; not a call per request) and
+        checks org membership using the path <code>organization_id</code>; repositories filter every query by
+        <code>organization_id</code>. Token signing and the <code>auth.users&nbsp;&rarr;&nbsp;profiles</code>
+        trigger sit outside the request path.</figcaption>
+      </figure>
+
+      <div class="stack">
+        <div class="tier">
+          <span class="label">Client</span>
+          <span class="body"><b>React SPA</b> served as static files. <code>supabase-js</code> owns the session
+          (access + refresh token in <code>localStorage</code>). Every backend call goes through <code>apiFetch</code>,
+          which injects <code>Authorization: Bearer &lt;access_token&gt;</code>.</span>
+        </div>
+        <div class="tier">
+          <span class="label">Identity</span>
+          <span class="body"><b>Supabase Auth</b> issues an <b>ES256</b> JWT on sign-in. The backend never calls
+          Supabase to check it &mdash; it verifies the signature against Supabase's public <code>JWKS</code>
+          document (fetched once, cached ~1h) and trusts only the <code>sub</code> claim.</span>
+        </div>
+        <div class="tier">
+          <span class="label">API</span>
+          <span class="body"><b>FastAPI</b> on Render. Routers: <code>auth</code>, <code>daily-reports</code>,
+          <code>dashboards</code>, <code>report-templates</code>. Two DI dependencies run on almost every route:
+          <code>get_current_user</code> (identity) and <code>require_role(...)</code> (org membership + rank).</span>
+        </div>
+        <div class="tier">
+          <span class="label">Domain</span>
+          <span class="body"><b>Services</b> hold the business logic and own the transaction; <b>repositories</b>
+          are the only place SQL is written and the layer where "filter by <code>organization_id</code>" becomes a
+          real <code>WHERE</code>. The <b>calculation engine</b> is a leaf library the save path calls.</span>
+        </div>
+        <div class="tier">
+          <span class="label">Data</span>
+          <span class="body"><b>Postgres on Supabase</b>, reached through the <b>Supavisor session pooler</b>
+          (IPv4). 13 tables. Schema owned entirely by <b>Alembic</b>; a Postgres trigger keeps
+          <code>profiles</code> in sync with <code>auth.users</code>.</span>
+        </div>
+      </div>
+
+      <h3>Backend layering rule</h3>
+      <p>A router function does three things only: declare its dependencies (auth, DB, role), call one service
+      function, return. It contains no SQL and no business logic. Services never import <code>fastapi</code> except
+      to raise <code>HTTPException</code>. Repositories never import services. This keeps the calculation engine and
+      the aggregation logic unit-testable without a running app.</p>
+    </section>
+
+    <!-- 04 -->
+    <section id="write">
+      <div class="sec-head"><span class="num">04</span><h2>Write path &mdash; save a Daily Report</h2></div>
+      <p>The critical path. A staff member types the day's takings and hits <strong>Save Daily Report</strong>.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 150" role="img" aria-label="Request lifecycle for a Daily Report save: the form PUTs a JSON body; apiFetch adds the bearer token; get_current_user verifies the JWT (fails 401 on a bad or expired token); require_role checks org membership (fails 403 for the wrong org); save_daily_report validates the payload (fails 422 on an unknown field or an amount at or above 1e12); evaluate() runs the calculation rules (fails 422 on a CalculationError); db.commit() persists in one transaction (fails 422, rolled back, on a numeric-overflow DataError).">
+          <defs>
+            <marker id="a2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)" />
+            </marker>
+            <marker id="a2f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--danger)" />
+            </marker>
+          </defs>
+
+          <!-- stage boxes -->
+          <rect class="dgm-box" x="6"   y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="57"  y="45" text-anchor="middle" font-size="12">Form</text>
+          <text class="dgm-sub"   x="57"  y="61" text-anchor="middle">DailyReportPage</text>
+
+          <rect class="dgm-box" x="134" y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="185" y="45" text-anchor="middle" font-size="12">Client</text>
+          <text class="dgm-sub"   x="185" y="61" text-anchor="middle">apiFetch</text>
+
+          <rect class="dgm-box-accent" x="262" y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="313" y="45" text-anchor="middle" font-size="12">Verify</text>
+          <text class="dgm-sub"   x="313" y="61" text-anchor="middle">get_current_user</text>
+
+          <rect class="dgm-box-accent" x="390" y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="441" y="45" text-anchor="middle" font-size="12">Authorize</text>
+          <text class="dgm-sub"   x="441" y="61" text-anchor="middle">require_role</text>
+
+          <rect class="dgm-box-accent" x="518" y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="569" y="45" text-anchor="middle" font-size="12">Orchestrate</text>
+          <text class="dgm-sub"   x="569" y="61" text-anchor="middle">save_daily_report</text>
+
+          <rect class="dgm-box-accent" x="646" y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="697" y="45" text-anchor="middle" font-size="12">Compute</text>
+          <text class="dgm-sub"   x="697" y="61" text-anchor="middle">evaluate()</text>
+
+          <rect class="dgm-box-accent" x="774" y="24" width="102" height="50" rx="8" />
+          <text class="dgm-title" x="825" y="45" text-anchor="middle" font-size="12">Persist</text>
+          <text class="dgm-sub"   x="825" y="61" text-anchor="middle">db.commit()</text>
+
+          <!-- forward edges -->
+          <line class="dgm-edge-accent" x1="108" y1="49" x2="132" y2="49" marker-end="url(#a2a)" />
+          <line class="dgm-edge-accent" x1="236" y1="49" x2="260" y2="49" marker-end="url(#a2a)" />
+          <line class="dgm-edge-accent" x1="364" y1="49" x2="388" y2="49" marker-end="url(#a2a)" />
+          <line class="dgm-edge-accent" x1="492" y1="49" x2="516" y2="49" marker-end="url(#a2a)" />
+          <line class="dgm-edge-accent" x1="620" y1="49" x2="644" y2="49" marker-end="url(#a2a)" />
+          <line class="dgm-edge-accent" x1="748" y1="49" x2="772" y2="49" marker-end="url(#a2a)" />
+
+          <text class="dgm-elabel" x="120" y="15" text-anchor="middle">PUT + body</text>
+          <text class="dgm-elabel" x="248" y="15" text-anchor="middle">+ bearer token</text>
+          <text class="dgm-elabel" x="376" y="15" text-anchor="middle">sub &rarr; user.id</text>
+          <text class="dgm-elabel" x="504" y="15" text-anchor="middle">membership &check;</text>
+          <text class="dgm-elabel" x="632" y="15" text-anchor="middle">guards passed</text>
+          <text class="dgm-elabel" x="760" y="15" text-anchor="middle">totals computed</text>
+
+          <!-- failure exits -->
+          <text class="dgm-fail" x="6" y="106">on failure &darr;</text>
+          <line class="dgm-fail-edge" x1="313" y1="74" x2="313" y2="100" marker-end="url(#a2f)" />
+          <line class="dgm-fail-edge" x1="441" y1="74" x2="441" y2="100" marker-end="url(#a2f)" />
+          <line class="dgm-fail-edge" x1="569" y1="74" x2="569" y2="100" marker-end="url(#a2f)" />
+          <line class="dgm-fail-edge" x1="697" y1="74" x2="697" y2="100" marker-end="url(#a2f)" />
+          <line class="dgm-fail-edge" x1="825" y1="74" x2="825" y2="100" marker-end="url(#a2f)" />
+
+          <text class="dgm-fail" x="313" y="116" text-anchor="middle">401 bad token</text>
+          <text class="dgm-fail" x="441" y="116" text-anchor="middle">403 wrong org</text>
+          <text class="dgm-fail" x="569" y="116" text-anchor="middle">422 field / amount</text>
+          <text class="dgm-fail" x="697" y="116" text-anchor="middle">422 calc error</text>
+          <text class="dgm-fail" x="825" y="116" text-anchor="middle">422 overflow</text>
+
+          <text class="dgm-sub" x="825" y="138" text-anchor="middle">success &rarr; 200 DailyReportOut</text>
+        </svg>
+        <figcaption>The request only advances if each stage passes. The two auth gates (<code>Verify</code>,
+        <code>Authorize</code>) and the three domain guards (unknown-field check, <code>MAX_AMOUNT</code>,
+        calc-engine validation, plus the <code>DataError</code> backstop on commit) each reject with a specific
+        status &mdash; nothing reaches the database until all of them clear. The read path (dashboards) is in
+        &sect;05.</figcaption>
+      </figure>
+
+      <ol class="steps">
+        <li><p>Keystroke &rarr; <code>updateSales</code> / <code>updateExpense</code> / <code>updateSummary</code> run
+        <code>isAcceptableNumberInput</code>: only digits, one dot, optional leading minus, magnitude &lt;
+        <code>MAX_MONEY</code> (10<sup>11</sup>). A bad character is <em>rejected</em>, never stripped.
+        <code>totalSales</code> / <code>totalExpenses</code> recompute via <code>useMemo</code> as a preview.
+        <span class="loc">DailyReportPage.tsx · lib/validation.ts</span></p></li>
+
+        <li><p>On mount, effect&nbsp;A calls <code>fetchMe()</code> and picks the <code>dosa-n-chutney</code> org (or
+        the first membership) &rarr; <code>organizationId</code>. Effect&nbsp;B (on org/date change) calls
+        <code>fetchDailyReport</code> purely to know if an entry <em>already exists</em> for that date &mdash;
+        it never populates the form. The form always starts blank.
+        <span class="loc">DailyReportPage.tsx effect A / B</span></p></li>
+
+        <li><p><strong>Save</strong> &rarr; <code>handleSave</code> builds
+        <code>{ values: {field_key: string}, expenses: [{description, amount}] }</code> and calls
+        <code>saveDailyReport</code> &rarr; <code>PUT /organizations/{id}/daily-reports/by-date/{date}</code>.
+        <span class="loc">reportsApi.ts</span></p></li>
+
+        <li><p><code>apiFetch</code> reads <code>session.access_token</code> from <code>supabase-js</code>, sets the
+        bearer header, <code>JSON.stringify</code>s the body. Non-2xx &rarr; <code>throw new ApiError(detail, status)</code>.
+        <span class="loc">api/client.ts</span></p></li>
+
+        <li><p>FastAPI resolves <code>get_current_user</code>: <code>_JWKSVerifier.verify</code> pulls Supabase's
+        signing key via <code>PyJWKClient</code> (cached), then <code>jwt.decode(token, key,
+        algorithms=["ES256","RS256"], audience=settings.supabase_jwt_audience, require=["exp","sub"], leeway=30)</code>.
+        The <code>sub</code> becomes <code>AuthenticatedUser.id</code>. Any <code>PyJWTError</code> &rarr;
+        <code>401 "Invalid or expired session. Please sign in again."</code>
+        <span class="loc">auth/dependencies.py</span></p></li>
+
+        <li><p><code>require_role("staff")</code> &rarr; <code>get_membership</code>: <code>organization_id</code> comes
+        from the <em>URL path</em>; a <code>SELECT</code> on <code>organization_members</code> confirms the caller has
+        a row for it. Missing &rarr; <code>403</code> (identical error whether the org is absent or just not yours).
+        <span class="loc">auth/permissions.py</span></p></li>
+
+        <li><p><code>report_service.save_daily_report</code>: resolve the org's <code>daily-operations</code> template
+        and its <strong>published version</strong> (org-scoped query). Reject any <code>values</code> key that isn't a
+        non-calculated field on that version &rarr; <code>422</code>.
+        <span class="loc">services/report_service.py · repositories/template_repository.py</span></p></li>
+
+        <li><p><code>create_report</code> <strong>always <code>INSERT</code>s a new <code>daily_reports</code> row</strong>
+        (MODEL&nbsp;2). It pins <code>template_version_id</code> now and never repoints it.
+        <span class="loc">repositories/daily_report_repository.py</span></p></li>
+
+        <li><p>Coerce each raw value with <code>_to_decimal</code> (blank / invalid &rarr; <code>Decimal("0")</code>).
+        Reject any field or expense amount &ge; <code>MAX_AMOUNT</code> (10<sup>12</sup>, the
+        <code>NUMERIC(14,2)</code> ceiling) with a clean <code>422</code>. Sum expense rows &rarr;
+        <code>total_expenses</code>.
+        <span class="loc">report_service.py</span></p></li>
+
+        <li><p><strong>Calculation engine.</strong> <code>validate_rules(fields, rules)</code> parses each rule's
+        operands against its Pydantic schema and topologically orders them; <code>evaluate(...)</code> executes
+        <code>apply_operation</code> per rule over <code>Decimal</code>s, feeding results back into the pool. This
+        template: <code>total_sales = SUM(card,cash,uber_eats,just_eat,deliveroo,other_sales)</code>,
+        <code>operating_profit = total_sales − total_expenses</code>. A <code>CalculationError</code> &rarr; <code>422</code>.
+        <span class="loc">calculations/evaluator.py · registry.py · graph.py</span></p></li>
+
+        <li><p>One transaction: <code>replace_expenses</code> (delete none — fresh row — then insert),
+        <code>upsert_values</code> (one row per field, <code>NUMERIC(18,4)</code>),
+        <code>report.status = "submitted"</code>, <code>db.commit()</code>. A stray <code>DataError</code> is caught,
+        rolled back, and returned as <code>422</code> instead of a <code>500</code>.
+        <span class="loc">daily_report_repository.py · report_service.py</span></p></li>
+
+        <li><p>Response <code>DailyReportOut</code> (every stored value as a string). The form marks the entry
+        &ldquo;linked&rdquo;, clears the &ldquo;an entry already exists&rdquo; banner, shows a confirmation.
+        <span class="loc">schemas/daily_report.py · DailyReportPage.tsx</span></p></li>
+      </ol>
+
+      <div class="callout">
+        <p class="t">MODEL 2</p>
+        <p>Every Save is an independent <code>daily_reports</code> row. Migration <code>c1a2b3d4e5f6</code> dropped
+        <code>UNIQUE(report_template_id, report_date)</code>. Saving twice for one date &rarr; two rows &rarr; the
+        dashboards <strong>sum</strong> them. There is no in-place edit; correcting a typo means the wrong number
+        stays in the total unless you delete the row in SQL.</p>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="read">
+      <div class="sec-head"><span class="num">05</span><h2>Read path &mdash; dashboards</h2></div>
+      <p>All three dashboards are <strong>computed on read</strong> &mdash; no materialised aggregates, no cache.
+      At current data volume (a handful of rows per day) plain SQL grouping is instant.</p>
+
+      <h4>Sales Dashboard</h4>
+      <ol class="steps">
+        <li><p>Component holds <code>range</code> state (<code>7 | 30 | 90 | all</code>, default 30). On change it
+        fetches <code>sales/daily?days=N</code> where <code>N = fetchWindowDays(range)</code> &mdash; double the
+        window for fixed ranges (so it can also show the preceding period), <code>36500</code> for all-time.
+        <span class="loc">SalesDashboard.tsx · lib/dashboardRange.ts</span></p></li>
+        <li><p><code>dashboard_service.sales_daily</code> loads every <code>daily_report</code> with
+        <code>report_date &ge; today − days</code>, eager-loading values + fields, then <strong>groups by date</strong>:
+        multiple reports on one date are summed into a single daily row (the MODEL&nbsp;2 fix).
+        <span class="loc">services/dashboard_service.py</span></p></li>
+        <li><p>Client splits the returned rows into <em>current</em> vs <em>previous</em> period via
+        <code>splitByRange</code>, then derives everything: total, per-channel breakdown, daily trend (last 30 bars),
+        delivery-platform split, growth vs previous period, latest-day figure.
+        <span class="loc">SalesDashboard.tsx</span></p></li>
+      </ol>
+
+      <h4>Expenses Dashboard</h4>
+      <p>Three parallel fetches: <code>expenses/daily?days=N</code> (new endpoint, group-by-date total),
+      <code>expenses/by-category?since&amp;until</code> (range from the same filter), <code>expenses/recent?limit=15</code>.
+      KPIs, trend, category donut and the recent table all follow the range toggle.</p>
+
+      <h4>Profit Track</h4>
+      <p>Two fetches: <code>profit/monthly?months=7</code> (revenue / expenses / profit per month) and
+      <code>profit/daily-summary?date=</code> for the currently-selected report date. <code>daily_summary</code>
+      sums every entry for that date, computes <code>expected_cash = opening + cash_sales − expenses</code> vs the
+      counted <code>cash_balance</code>, and a variance. <code>|variance| &lt; 1</code> reads as &ldquo;reconciled&rdquo;.</p>
+
+      <div class="callout debt">
+        <p class="t">Read-path caveat under MODEL 2</p>
+        <p><code>opening_cash</code>, <code>cash_balance</code> and <code>next_day_open_cash</code> are
+        <strong>snapshots, not flows</strong> &mdash; summing them across a day's multiple entries (which
+        <code>daily_summary</code> now does) is wrong. If more than one Save per day becomes routine, the cash
+        reconciliation needs to take the latest entry's snapshot fields and sum only the additive ones.</p>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="templates">
+      <div class="sec-head"><span class="num">06</span><h2>The template engine</h2></div>
+      <p>A report type is four nested row-sets, all versioned:</p>
+<pre class="tree">
+report_templates            <i>stable identity — "Daily Operations Ledger", key "daily-operations"</i>
+  └─ report_template_versions   <i>draft → published → archived; version_number</i>
+       ├─ report_sections       <i>"Income / Sales", "Expenses", "Summary" (display_order)</i>
+       │    └─ report_fields    <i>opening_cash, card_sales… — field_type, is_calculated, JSONB metadata</i>
+       └─ calculation_rules     <i>{operation, operands(JSONB)} — key matches a calculated field</i>
+</pre>
+      <h3>Why versions are frozen</h3>
+      <p>When a <code>daily_reports</code> row is created it pins <code>template_version_id</code> and
+      <strong>never repoints it</strong>. A report filed in March always renders and recalculates against the
+      template as it was in March, even after the template is edited. Editing a template = drafting a
+      <em>new</em> version (<code>template_service.create_draft_version</code>), which
+      <code>publish_version</code> promotes only after <code>validate_rules</code> passes &mdash;
+      <code>report_templates.current_version_id</code> then swings to it (a deferred FK,
+      <code>post_update=True</code>, breaks the circular reference).</p>
+
+      <h3>Extensibility hatches</h3>
+      <ul>
+        <li><code>report_fields.field_metadata</code> (DB column <code>metadata</code>, JSONB) &mdash; select
+        options and other per-field config without a schema change.</li>
+        <li><code>expense_categories</code> is rows, not an enum: <code>organization_id IS NULL</code> = a system
+        default visible to every org (partial unique index on <code>key</code>); set = that org's custom addition.</li>
+      </ul>
+      <p class="muted" style="font-size:.9rem">The template CRUD API (<code>report_templates.py</code>, 6 routes,
+      admin-gated) is complete and tested via the engine, but <strong>has no admin UI</strong> &mdash; today
+      templates change by API call or SQL only.</p>
+    </section>
+
+    <!-- 07 -->
+    <section id="calc">
+      <div class="sec-head"><span class="num">07</span><h2>The calculation engine</h2></div>
+      <p>A self-contained library over <code>Decimal</code> &mdash; no database, no <code>eval</code>, no
+      <code>exec</code>. A rule is <code>{operation, operands}</code>; <code>operands</code> is validated against a
+      closed Pydantic schema chosen by <code>operation</code>. An operand is either a <code>ref</code> (another
+      field/rule key) or a literal <code>const</code> &mdash; the model rejects setting both.</p>
+
+      <h3>Operations (9, closed set)</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Op</th><th>Operands</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>SUM</code></td><td><code>items[]</code></td><td>refs and/or consts</td></tr>
+            <tr><td><code>SUM_GROUP</code></td><td><code>group</code></td><td>sums every field in a section; membership resolved by the evaluator, not a ref</td></tr>
+            <tr><td><code>SUBTRACT</code> <code>MULTIPLY</code> <code>DIVIDE</code></td><td><code>left</code>, <code>right</code></td><td><code>DIVIDE</code> by 0 &rarr; typed error at evaluate time</td></tr>
+            <tr><td><code>PERCENTAGE</code></td><td><code>numerator</code>, <code>denominator</code></td><td>&times; 100; 0 denominator &rarr; typed error</td></tr>
+            <tr><td><code>MIN</code> <code>MAX</code></td><td><code>items[]</code></td><td>&mdash;</td></tr>
+            <tr><td><code>ROUND</code></td><td><code>value</code>, <code>decimals</code> (0&ndash;6)</td><td><code>ROUND_HALF_UP</code>, not banker's rounding</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Two entry points</h3>
+      <ol class="steps">
+        <li><p><code>validate_rules(fields, rules)</code> &mdash; run <strong>once, at publish</strong>. Parses every
+        operand; checks every <code>ref</code> resolves to a known field or rule and every <code>SUM_GROUP</code>
+        names a real section; runs <code>graph.topological_order</code> (DFS) to detect cycles and produce a safe
+        evaluation order. A version that fails cannot be published.
+        <span class="loc">calculations/evaluator.py, graph.py</span></p></li>
+        <li><p><code>evaluate(fields, ordered_rules, raw_values)</code> &mdash; run <strong>on every save</strong>.
+        Takes the pre-proven order and just executes each rule. The hot path never re-derives the graph.
+        Caller contract: every non-calculated field must be present in <code>raw_values</code> (default blanks to
+        <code>0</code>) &mdash; a gap raises a typed <code>MissingDependencyError</code>, never a bare <code>KeyError</code>.
+        <span class="loc">calculations/evaluator.py, registry.py</span></p></li>
+      </ol>
+
+      <h3>Cycle-detection subtlety (tested)</h3>
+      <p>A subtotal like <code>total_sales</code> <em>lives in</em> the <code>sales</code> section it sums &mdash;
+      that is <strong>not</strong> a self-cycle and is explicitly excluded. But two rules that
+      <code>SUM_GROUP</code> each other's home section <em>is</em> a real cycle and is caught. Both cases have
+      dedicated tests.</p>
+    </section>
+
+    <!-- 08 -->
+    <section id="data">
+      <div class="sec-head"><span class="num">08</span><h2>Data model</h2></div>
+      <p>13 tables. Every row cascades from an <code>organization</code> (or is a global default). UUID PKs,
+      server-generated via <code>gen_random_uuid()</code>; <code>created_at</code>/<code>updated_at</code> on most
+      tables via a mixin.</p>
+
+      <h4>Identity &amp; tenancy</h4>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Table</th><th>Holds</th><th>Constraints</th></tr></thead>
+        <tbody>
+          <tr><td><code>organizations</code></td><td>tenant boundary; <code>slug</code>, <code>currency</code> (GBP)</td><td><code>slug</code> unique</td></tr>
+          <tr><td><code>organization_members</code></td><td>profile &harr; org + <code>role</code></td><td>unique <code>(org, user)</code>; role &isin; owner/admin/manager/staff</td></tr>
+          <tr><td><code>profiles</code></td><td>app-side user; <code>id</code> = <code>auth.users.id</code></td><td>FK to <code>auth.users</code> (<code>ON DELETE CASCADE</code>); filled by trigger</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>Template engine</h4>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Table</th><th>Holds</th><th>Constraints</th></tr></thead>
+        <tbody>
+          <tr><td><code>report_templates</code></td><td>report-type identity + pointer to live version</td><td>unique <code>(org, key)</code>; deferred FK to version</td></tr>
+          <tr><td><code>report_template_versions</code></td><td>frozen snapshot; <code>version_number</code>, status</td><td>unique <code>(template, version_number)</code></td></tr>
+          <tr><td><code>report_sections</code></td><td>ordered field groups</td><td>unique <code>(version, key)</code></td></tr>
+          <tr><td><code>report_fields</code></td><td>one input line; <code>field_type</code>, <code>is_calculated</code>, JSONB <code>metadata</code></td><td>unique <code>(section, key)</code>; type CHECK</td></tr>
+          <tr><td><code>calculation_rules</code></td><td><code>{operation, operands}</code> per calculated field</td><td>unique <code>(version, key)</code>; operation CHECK</td></tr>
+          <tr><td><code>expense_categories</code></td><td>expense taxonomy; NULL org = global default</td><td>unique <code>(org, key)</code> + partial unique on <code>key</code> where org IS NULL</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>Report storage</h4>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Table</th><th>Holds</th><th>Constraints &amp; notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>daily_reports</code></td><td>one saved submission; pins <code>template_version_id</code></td><td><span class="pill new">changed</span> unique <code>(template, date)</code> <strong>dropped</strong> — many per date; index <code>(org, date, created_at)</code></td></tr>
+          <tr><td><code>daily_report_values</code></td><td>one answered field: <code>value_numeric NUMERIC(18,4)</code> or <code>value_text</code></td><td>unique <code>(report, field)</code></td></tr>
+          <tr><td><code>daily_report_expenses</code></td><td>line items: description, <code>amount NUMERIC(14,2)</code>, optional category</td><td>replaced wholesale each save</td></tr>
+          <tr><td><code>audit_logs</code></td><td>append-only history: entity, action, old/new value</td><td><span class="pill debt">unused</span> — table exists, <strong>nothing writes to it</strong></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>The <code>auth.users → profiles</code> trigger</h3>
+      <p>Created in migration 1: a <code>SECURITY DEFINER</code> plpgsql function on <code>AFTER INSERT ON
+      auth.users</code> inserts a matching <code>profiles</code> row (<code>ON CONFLICT DO NOTHING</code>). So a
+      profile exists the instant someone signs up &mdash; no just-in-time creation, no race. <code>GET /me</code>
+      still self-heals a missing profile defensively (<code>Profile(id=sub, display_name=email)</code>).</p>
+
+      <h3>Migrations (5)</h3>
+      <ol>
+        <li><code>3a069936839d</code> &mdash; full schema + the profiles trigger</li>
+        <li><code>58a177b1c0cd</code> &mdash; seed 13 universal expense categories (org NULL)</li>
+        <li><code>6a5356d68eec</code> &mdash; add <code>profiles.id</code> FK to <code>auth.users</code> (found by deleting a real user, seeing an orphan)</li>
+        <li><code>b6827bcf3c3b</code> &mdash; seed the Dosa n Chutney org, template v1, 11 fields, 2 rules, 8 custom expense categories</li>
+        <li><code>c1a2b3d4e5f6</code> &mdash; <span class="pill new">new</span> drop the one-per-date constraint (MODEL 2), add <code>(org, date, created_at)</code> index</li>
+      </ol>
+    </section>
+
+    <!-- 09 -->
+    <section id="auth">
+      <div class="sec-head"><span class="num">09</span><h2>Auth &amp; multi-tenancy</h2></div>
+      <p>Two independent checks on every protected route.</p>
+
+      <div class="two-col">
+        <div class="card">
+          <h4 style="margin-top:0">Who are you</h4>
+          <p class="muted" style="font-size:.9rem; max-width:none">
+          <code>_JWKSVerifier.verify</code>: <code>PyJWKClient(jwks_url, cache_keys=True, lifespan=3600)</code>
+          fetches the signing key, then <code>jwt.decode</code> with <code>["ES256","RS256"]</code>,
+          <code>audience</code> from config (<code>authenticated</code>), <code>require=["exp","sub"]</code>, 30s leeway.
+          Only <code>sub</code> &rarr; <code>AuthenticatedUser.id</code> is trusted.</p>
+        </div>
+        <div class="card">
+          <h4 style="margin-top:0">Can you touch this org</h4>
+          <p class="muted" style="font-size:.9rem; max-width:none">
+          <code>get_membership(org_id_from_path, db, user)</code> &rarr; one <code>SELECT</code> on
+          <code>organization_members</code>. <code>require_role("manager")</code> wraps it and compares
+          <code>ROLE_RANK = {staff:0, manager:1, admin:2, owner:3}</code>. Daily reports + dashboards need
+          <code>staff</code>; template writes need <code>admin</code>.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <p class="t">Invariant</p>
+        <p>The <code>organization_id</code> in every URL is checked against a real membership row. It is never
+        read from a request body. A missing membership and a non-existent org return the <em>same</em> 403 &mdash;
+        the API doesn't leak which orgs exist. Every repository function takes <code>organization_id</code> and
+        filters by it in SQL.</p>
+      </div>
+
+      <p><strong>Row-Level Security is not enabled</strong> on the Postgres tables. Tenant isolation is 100%
+      application-layer. A single missing <code>WHERE organization_id = ...</code> would be a cross-tenant leak.
+      RLS is the intended defence-in-depth follow-up.</p>
+    </section>
+
+    <!-- 10 -->
+    <section id="config">
+      <div class="sec-head"><span class="num">10</span><h2>Configuration &amp; environments</h2></div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Variable</th><th>Side</th><th>Used by</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>DATABASE_URL</code></td><td>backend</td><td><code>database/connection.py</code></td><td><code>normalize_database_url</code> re-quotes creds, forces <code>sslmode=require</code>, swaps driver to <code>postgresql+psycopg</code></td></tr>
+          <tr><td><code>SUPABASE_URL</code></td><td>backend</td><td><code>config.py</code> &rarr; <code>jwks_url</code></td><td><code>{url}/auth/v1/.well-known/jwks.json</code></td></tr>
+          <tr><td><code>SUPABASE_JWT_AUDIENCE</code></td><td>backend</td><td>JWT verify</td><td>must be <code>authenticated</code> (a typo here = every request 401s)</td></tr>
+          <tr><td><code>SUPABASE_ANON_KEY</code> / <code>SERVICE_ROLE_KEY</code></td><td>backend</td><td>config</td><td>present; not currently exercised by any code path</td></tr>
+          <tr><td><code>CORS_ALLOW_ORIGINS</code></td><td>backend</td><td><code>main.py</code></td><td>comma list; plus a regex allowing every <code>maara-*.vercel.app</code></td></tr>
+          <tr><td><code>VITE_SUPABASE_URL</code> / <code>VITE_SUPABASE_ANON_KEY</code></td><td>frontend</td><td><code>lib/supabaseClient.ts</code></td><td>build-time inlined by Vite; throws if unset</td></tr>
+          <tr><td><code>VITE_API_URL</code></td><td>frontend</td><td><code>api/client.ts</code></td><td>defaults to <code>http://localhost:8000</code></td></tr>
+        </tbody>
+      </table></div>
+      <p class="muted" style="font-size:.9rem"><code>alembic/env.py</code> reads <code>DATABASE_URL</code> via
+      <code>database/connection.py</code> (never from <code>alembic.ini</code>), and escapes <code>%</code> &rarr;
+      <code>%%</code> because configparser treats it as interpolation. There is one environment today &mdash;
+      production. No staging.</p>
+    </section>
+
+    <!-- 11 -->
+    <section id="deploy">
+      <div class="sec-head"><span class="num">11</span><h2>Deploy pipeline</h2></div>
+
+      <h4>Live</h4>
+      <div class="stack">
+        <div class="tier"><span class="label">Frontend</span><span class="body"><b>Vercel</b> — <code>npm run build</code> (<code>tsc -b &amp;&amp; vite build</code>) &rarr; static <code>dist/</code>. <code>VITE_*</code> set in the dashboard. One ~442&nbsp;KB JS bundle, no code splitting.</span></div>
+        <div class="tier"><span class="label">Backend</span><span class="body"><b>Render</b> via <code>render.yaml</code> blueprint (<code>rootDir: backend</code>). <code>preDeployCommand: alembic upgrade head</code> then <code>uvicorn main:app</code>. Secrets in the Render dashboard.</span></div>
+        <div class="tier"><span class="label">Data / Auth</span><span class="body"><b>Supabase</b> — Postgres via the Supavisor session pooler (<code>aws-0-eu-west-2.pooler.supabase.com:5432</code>, user <code>postgres.&lt;ref&gt;</code>); Auth issues ES256 JWTs.</span></div>
+      </div>
+
+      <h4>Scaffolded, uncommitted (branch <code>feat/production-pipeline</code>)</h4>
+      <ul>
+        <li><code>backend/Dockerfile</code> (multi-stage, non-root), <code>frontend/Dockerfile</code> + <code>nginx.conf</code>, <code>docker-compose.yml</code> (local Postgres + hot-reload API + Vite)</li>
+        <li>Pinned <code>requirement.txt</code> + <code>requirements-dev.txt</code>, <code>ruff.toml</code></li>
+        <li>This document (<code>docs/pipeline-audit.html</code>)</li>
+      </ul>
+
+      <h4>Not started</h4>
+      <ul>
+        <li>CI (GitHub Actions: lint + typecheck + pytest + build on PR)</li>
+        <li>Staging environment (2nd Supabase project, auto-deploy from <code>main</code>)</li>
+        <li>Error tracking (Sentry) + structured request logging + uptime check on <code>/health</code></li>
+        <li>Postgres RLS policies; documented backup / restore runbook</li>
+        <li>Gated production migrations (today every Render deploy runs <code>alembic upgrade head</code>)</li>
+      </ul>
+    </section>
+
+    <!-- 12 -->
+    <section id="tests">
+      <div class="sec-head"><span class="num">12</span><h2>Test coverage</h2></div>
+      <p><strong>20 tests, all in <code>tests/unit/test_calculations.py</code>.</strong> They cover the calculation
+      engine thoroughly: an end-to-end Dosa-shaped template (SUM_GROUP &rarr; SUBTRACT &rarr; PERCENTAGE &rarr;
+      nested ROUND, Decimal-exact), every operation individually, float-drift avoidance
+      (<code>0.1+0.2+0.3 == 0.6</code>), and every failure mode (unsupported op, malformed operands, ref+const,
+      missing ref, missing section, direct / self / cross-rule cycles, divide-by-zero, missing raw value).</p>
+      <div class="callout debt">
+        <p class="t">Coverage gaps</p>
+        <p>Nothing tests: the API layer, auth / JWKS verification, <code>report_service</code> orchestration
+        (including the MODEL&nbsp;2 insert and the <code>MAX_AMOUNT</code> guard), <code>dashboard_service</code>
+        aggregation (the group-by-date logic), repositories, or any frontend code. No integration test spins up the
+        app + a test database.</p>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section id="debt">
+      <div class="sec-head"><span class="num">13</span><h2>Known issues &amp; tech debt</h2></div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>#</th><th>Issue</th><th>Where</th><th>Class</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Snapshot fields (<code>opening_cash</code>, <code>cash_balance</code>, <code>next_day_open_cash</code>) summed across a day's entries under MODEL 2.</td><td><code>dashboard_service.daily_summary</code></td><td><span class="pill debt">design</span></td></tr>
+          <tr><td>2</td><td>No change history &mdash; <code>audit_logs</code> exists, nothing writes to it. MODEL 2 makes "who saved what, when" more relevant.</td><td>whole backend</td><td><span class="pill debt">gap</span></td></tr>
+          <tr><td>3</td><td>RLS not enabled &mdash; tenant isolation is app-layer only.</td><td>Supabase</td><td><span class="pill debt">security</span></td></tr>
+          <tr><td>4</td><td>No API / integration / frontend tests. New backend logic (MODEL 2, guards, aggregation) is untested.</td><td><code>tests/</code></td><td><span class="pill debt">gap</span></td></tr>
+          <tr><td>5</td><td><code>prepared_by</code> / <code>checked_by</code> typed <code>uuid</code>, but the UI <code>&lt;select&gt;</code> holds names ("Asha"). Latent &mdash; the form doesn't send them today.</td><td><code>schemas/daily_report.py</code>, <code>DailyReportPage.tsx</code></td><td><span class="pill warn">latent</span></td></tr>
+          <tr><td>6</td><td>Unhandled 500s ship no <code>Access-Control-Allow-Origin</code> (Starlette middleware order) &mdash; the browser misreports the real error as CORS.</td><td><code>main.py</code></td><td><span class="pill warn">DX</span></td></tr>
+          <tr><td>7</td><td><code>apiFetch</code> assigns a FastAPI validation <code>detail</code> array straight to the error message &rarr; <code>[object Object]</code>.</td><td><code>api/client.ts</code></td><td><span class="pill warn">DX</span></td></tr>
+          <tr><td>8</td><td>ESLint <code>react-hooks</code> v7 RC flags ~5 <code>set-state-in-effect</code> / reassign errors &mdash; the standard fetch-effect pattern, repo-wide (incl. <code>Charts.tsx</code>, <code>ProfitTracker.tsx</code>).</td><td>dashboards + pages</td><td><span class="pill warn">lint</span></td></tr>
+          <tr><td>9</td><td>StrictMode double-invokes effects in dev &mdash; every fetch effect relies on a <code>cancelled</code> flag; correct, but worth knowing when reading logs.</td><td><code>main.tsx</code> + all pages</td><td><span class="pill warn">note</span></td></tr>
+          <tr><td>10</td><td>Dead helpers in <code>reportData.ts</code>: <code>weekdayLabel</code>, <code>lastNDays</code>, <code>previousNDays</code>.</td><td><code>data/reportData.ts</code></td><td><span class="pill warn">cleanup</span></td></tr>
+          <tr><td>11</td><td>Stray nested <code>frontend/frontend/.env.local</code> directory.</td><td>repo</td><td><span class="pill warn">cleanup</span></td></tr>
+          <tr><td>12</td><td>Single 442&nbsp;KB JS bundle; no route-level code splitting. No rate limiting; no structured request logs.</td><td>build / API</td><td><span class="pill warn">perf/ops</span></td></tr>
+          <tr><td>13</td><td>Template engine has no admin UI &mdash; changes require API calls or SQL.</td><td>frontend</td><td><span class="pill warn">product</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="callout">
+        <p class="t">Fixed this session</p>
+        <p>Numeric input: <code>"1842x00" &rarr; 184200</code> (regex stripped the letter) and 15-digit amounts
+        overflowing <code>NUMERIC(14,2)</code> &mdash; now rejected at the input and guarded server-side with a
+        clean 422 + <code>DataError</code> backstop. JWT audience typo (<code>authenticatedX</code>). IPv6-only DB
+        host &rarr; Supavisor pooler URL. Dashboard auto-populating the entry form &rarr; explicit "Load last entry".
+        One-per-date constraint &rarr; MODEL 2. Dashboard range filter added.</p>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section id="prompt">
+      <div class="sec-head"><span class="num">14</span><h2>Reusable audit prompt</h2></div>
+      <p>Paste at the top of a fresh session (repo open) to regenerate this review, or scope it to one subsystem.</p>
+      <div class="prompt">
+        <div class="bar"><span>codebase-audit.prompt</span><button type="button" data-copy>Copy</button></div>
+        <pre id="promptText">You are auditing the MAARA AI Business Manager repo (FastAPI + React/Vite + Supabase Postgres,
+schema owned by Alembic). Do NOT change code or touch the database. Produce a written audit only.
+
+VERIFY FROM THE CODE — do not assume:
+- Reports use MODEL 2: every Save = a new `daily_reports` row; dashboards SUM every entry in a
+  date range. UNIQUE(report_template_id, report_date) was dropped in migration c1a2b3d4e5f6.
+- Templates are versioned and frozen: a daily_reports row pins template_version_id forever.
+- Multi-tenancy is app-layer only (no RLS). Every repository fn takes organization_id and filters
+  by it; routes gate with get_membership / require_role (staff<manager<admin<owner). org_id always
+  comes from the URL path, never a request body.
+- Auth = Supabase JWT, ES256, verified against the JWKS endpoint in auth/dependencies.py.
+- The calculation engine (backend/calculations/*) is a closed 9-op grammar, no eval/exec, Decimal.
+- Money columns: daily_report_values.value_numeric NUMERIC(18,4); daily_report_expenses.amount
+  NUMERIC(14,2). Server rejects amounts >= 1e12; frontend rejects magnitude > 1e11
+  (frontend/src/lib/validation.ts).
+- Only the calculation engine has tests (tests/unit/test_calculations.py, 20). No API/integration
+  /frontend tests.
+
+FOR THE TARGET (default: the whole request pipeline; else the subsystem I name), REPORT:
+1. End-to-end trace: UI event -> client fn -> route -> dependency -> service -> repository -> DB,
+   citing file:function:line per hop.
+2. Every function involved: name, one-line role, status (working / caveat / bug / dead code).
+3. Data model touched: tables, columns, constraints, indexes; what a repeated action leaves in the DB.
+4. Correctness risks: overwrites, races, unhandled error paths, Pydantic-schema vs actual frontend
+   payload mismatch, numeric overflow/precision, snapshot-vs-additive field confusion under MODEL 2.
+5. Security/tenancy: can any path reach another org's data?
+6. SQL I can run in Supabase to confirm each DB-level claim.
+7. Separate SAVE-LAYER problems from READ/DASHBOARD-LAYER problems — prove which layer each symptom
+   originates in, using the code.
+
+RULES: cite exact file paths and line numbers. Quote the lines that cause each behaviour. Show the
+root cause before any recommendation. Recommend the minimal safe change; do not apply it.</pre>
+      </div>
+      <p class="muted" style="font-size:.9rem; margin-top:18px">Scope it by replacing &ldquo;the whole request
+      pipeline&rdquo; with e.g. <code>the Sales Dashboard read path</code>, <code>the calculation engine</code>,
+      <code>the template publish flow</code>, or <code>the auth / membership layer</code>.</p>
+    </section>
+
+    <footer>
+      MAARA System Design &middot; full read of backend/ + frontend/src/ &middot; post MODEL 2 + range filter &middot;
+      2026-09-09
+    </footer>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var btn = document.querySelector('[data-copy]'), txt = document.getElementById('promptText');
+    if (btn && txt) btn.addEventListener('click', function () {
+      navigator.clipboard.writeText(txt.innerText).then(function () {
+        var o = btn.textContent; btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = o; }, 1600);
+      }).catch(function () {
+        var r = document.createRange(); r.selectNodeContents(txt);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      });
+    });
+    var links = [].slice.call(document.querySelectorAll('nav.toc a')), map = {};
+    links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+    if (links.length && 'IntersectionObserver' in window) {
+      var obs = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          if (e.isIntersecting) {
+            links.forEach(function (l) { l.style.color = ''; });
+            if (map[e.target.id]) map[e.target.id].style.color = 'var(--accent)';
+          }
+        });
+      }, { rootMargin: '-10% 0px -80% 0px' });
+      document.querySelectorAll('section[id]').forEach(function (s) { obs.observe(s); });
+    }
+  })();
+</script>

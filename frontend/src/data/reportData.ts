@@ -4,17 +4,25 @@
 // dashboards read from the real backend API (see src/api/reportsApi.ts).
 
 export type SalesChannels = {
-  cardSales: number
+  cardSalesMachine: number
   cashSales: number
   uberEatsSales: number
   justEatSales: number
   deliverooSales: number
   otherSales: number
   miscIncome: number
+  tips: number
+  payout: number
 }
 
-export const salesChannelMeta: { key: keyof Omit<SalesChannels, 'miscIncome'>; label: string; color: string }[] = [
-  { key: 'cardSales', label: 'Card Sales', color: '#2a78d6' },
+// tips/payout are deliberately excluded here — they're cash-handling
+// figures, not revenue channels (see dashboard_service.py).
+export const salesChannelMeta: {
+  key: keyof Omit<SalesChannels, 'miscIncome' | 'tips' | 'payout'>
+  label: string
+  color: string
+}[] = [
+  { key: 'cardSalesMachine', label: 'Card Sales', color: '#2a78d6' },
   { key: 'cashSales', label: 'Cash Sales', color: '#1baf7a' },
   { key: 'uberEatsSales', label: 'Uber Eats', color: '#eda100' },
   { key: 'justEatSales', label: 'Just Eat', color: '#e87ba4' },
@@ -24,7 +32,7 @@ export const salesChannelMeta: { key: keyof Omit<SalesChannels, 'miscIncome'>; l
 
 export function channelTotal(entry: SalesChannels): number {
   return (
-    entry.cardSales +
+    entry.cardSalesMachine +
     entry.cashSales +
     entry.uberEatsSales +
     entry.justEatSales +
@@ -33,11 +41,9 @@ export function channelTotal(entry: SalesChannels): number {
   )
 }
 
-export function parseAmount(raw: string | undefined): number {
-  if (!raw) return 0
-  const numeric = Number(raw.replace(/[^\d.-]/g, ''))
-  return Number.isFinite(numeric) ? numeric : 0
-}
+// Re-exported from the shared validator so every screen parses money the same
+// way (invalid text -> 0, characters never stripped).
+export { parseAmount } from '../lib/validation'
 
 export function formatGBP(value: number, options?: { decimals?: boolean }): string {
   const decimals = options?.decimals ?? true

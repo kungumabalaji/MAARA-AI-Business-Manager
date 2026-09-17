@@ -10,7 +10,8 @@ Staff Wages, ...), not food-business-specific. Dosa n Chutney's own categories
 (Groceries, Cash & Carry, Meat Bills, delivery commissions, ...) are seeded as
 that org's custom additions in the Phase 3 template migration, not here.
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -19,9 +20,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '58a177b1c0cd'
-down_revision: Union[str, Sequence[str], None] = '3a069936839d'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '3a069936839d'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 expense_categories = sa.table(
     "expense_categories",

@@ -4,7 +4,17 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,8 +32,10 @@ class DailyReport(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """
 
     __tablename__ = "daily_reports"
+    # No unique constraint on (template, date): every Save creates an independent
+    # entry and dashboards sum them (see migration c1a2b3d4e5f6). Multiple reports
+    # per date are expected.
     __table_args__ = (
-        UniqueConstraint("report_template_id", "report_date", name="uq_daily_report_template_date"),
         CheckConstraint("status IN ('draft','submitted','approved','rejected')", name="ck_daily_report_status"),
     )
 
@@ -55,11 +67,11 @@ class DailyReport(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    template_version: Mapped["ReportTemplateVersion"] = relationship(back_populates="daily_reports")
-    values: Mapped[list["DailyReportValue"]] = relationship(
+    template_version: Mapped[ReportTemplateVersion] = relationship(back_populates="daily_reports")
+    values: Mapped[list[DailyReportValue]] = relationship(
         back_populates="daily_report", cascade="all, delete-orphan"
     )
-    expenses: Mapped[list["DailyReportExpense"]] = relationship(
+    expenses: Mapped[list[DailyReportExpense]] = relationship(
         back_populates="daily_report", cascade="all, delete-orphan"
     )
 
@@ -86,8 +98,8 @@ class DailyReportValue(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     value_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    daily_report: Mapped["DailyReport"] = relationship(back_populates="values")
-    field: Mapped["ReportField"] = relationship(back_populates="values")
+    daily_report: Mapped[DailyReport] = relationship(back_populates="values")
+    field: Mapped[ReportField] = relationship(back_populates="values")
 
     def __repr__(self) -> str:
         return f"<DailyReportValue report={self.daily_report_id} field={self.field_id}>"
@@ -109,8 +121,8 @@ class DailyReportExpense(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
-    daily_report: Mapped["DailyReport"] = relationship(back_populates="expenses")
-    category: Mapped["ExpenseCategory | None"] = relationship(back_populates="expenses")
+    daily_report: Mapped[DailyReport] = relationship(back_populates="expenses")
+    category: Mapped[ExpenseCategory | None] = relationship(back_populates="expenses")
 
     def __repr__(self) -> str:
         return f"<DailyReportExpense {self.description} {self.amount}>"

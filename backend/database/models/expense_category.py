@@ -36,7 +36,7 @@ class ExpenseCategory(Base, UUIDPrimaryKeyMixin):
     is_fixed_cost: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
-    expenses: Mapped[list["DailyReportExpense"]] = relationship(back_populates="category")
+    expenses: Mapped[list[DailyReportExpense]] = relationship(back_populates="category")
 
     def __repr__(self) -> str:
         return f"<ExpenseCategory {self.key}>"

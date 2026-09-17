@@ -12,14 +12,29 @@ from services import dashboard_service
 router = APIRouter(prefix="/organizations/{organization_id}/dashboard", tags=["dashboards"])
 
 
+# le=100000 (~270 years) is the "All-time" sentinel — the frontend range filter
+# sends a very large window to mean "everything".
+_MAX_DAYS = 100_000
+
+
 @router.get("/sales/daily")
 def sales_daily(
     organization_id: uuid.UUID,
-    days: int = Query(default=21, ge=1, le=180),
+    days: int = Query(default=21, ge=1, le=_MAX_DAYS),
     db: Session = Depends(get_db),
     membership: OrganizationMember = Depends(require_role("staff")),
 ):
     return dashboard_service.sales_daily(db, organization_id, days)
+
+
+@router.get("/expenses/daily")
+def expenses_daily(
+    organization_id: uuid.UUID,
+    days: int = Query(default=90, ge=1, le=_MAX_DAYS),
+    db: Session = Depends(get_db),
+    membership: OrganizationMember = Depends(require_role("staff")),
+):
+    return dashboard_service.expenses_daily(db, organization_id, days)
 
 
 @router.get("/sales/monthly")
@@ -32,6 +47,17 @@ def sales_monthly(
     return dashboard_service.sales_monthly(db, organization_id, months)
 
 
+@router.get("/sales/monthly-summary")
+def sales_month_summary(
+    organization_id: uuid.UUID,
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    db: Session = Depends(get_db),
+    membership: OrganizationMember = Depends(require_role("staff")),
+):
+    return dashboard_service.sales_month_summary(db, organization_id, year, month)
+
+
 @router.get("/expenses/monthly")
 def expenses_monthly(
     organization_id: uuid.UUID,
@@ -40,6 +66,15 @@ def expenses_monthly(
     membership: OrganizationMember = Depends(require_role("staff")),
 ):
     return dashboard_service.expenses_monthly(db, organization_id, months)
+
+
+@router.get("/expenses/categories")
+def expenses_categories(
+    organization_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    membership: OrganizationMember = Depends(require_role("staff")),
+):
+    return dashboard_service.list_expense_categories(db, organization_id)
 
 
 @router.get("/expenses/by-category")
@@ -56,11 +91,13 @@ def expenses_by_category(
 @router.get("/expenses/recent")
 def expenses_recent(
     organization_id: uuid.UUID,
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=500),
+    since: date_type | None = Query(default=None),
+    until: date_type | None = Query(default=None),
     db: Session = Depends(get_db),
     membership: OrganizationMember = Depends(require_role("staff")),
 ):
-    return dashboard_service.expenses_recent(db, organization_id, limit)
+    return dashboard_service.expenses_recent(db, organization_id, limit, since, until)
 
 
 @router.get("/profit/monthly")

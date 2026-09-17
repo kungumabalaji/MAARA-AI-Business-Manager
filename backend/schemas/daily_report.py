@@ -44,3 +44,8 @@ class DailyReportOut(BaseModel):
     expenses: list[ExpenseOut]
     prepared_by: uuid.UUID | None
     checked_by: uuid.UUID | None
+
+
+class DailyReportListOut(BaseModel):
+    items: list[DailyReportOut]
+    total: int
