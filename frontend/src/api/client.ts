@@ -19,11 +19,15 @@ async function authHeader(): Promise<Record<string, string>> {
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const auth = await authHeader()
+  // FormData bodies (file uploads) must NOT get a manual Content-Type — the
+  // browser sets multipart/form-data with the correct boundary itself, and
+  // overriding it here would silently break the upload.
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...auth,
       ...(options.headers ?? {}),
     },

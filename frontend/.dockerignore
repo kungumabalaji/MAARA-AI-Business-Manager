@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-ssr/
+.env
+.env.*
+!.env.example
+frontend/
+*.md
+.git/
+.github/

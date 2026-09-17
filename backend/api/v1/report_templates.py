@@ -8,7 +8,12 @@ from auth.permissions import require_role
 from auth.schemas import AuthenticatedUser
 from database.models import OrganizationMember, ReportTemplate
 from repositories import template_repository
-from schemas.template import ReportTemplateCreate, ReportTemplateOut, TemplateVersionCreate, TemplateVersionOut
+from schemas.template import (
+    ReportTemplateCreate,
+    ReportTemplateOut,
+    TemplateVersionCreate,
+    TemplateVersionOut,
+)
 from services import template_service
 
 router = APIRouter(prefix="/organizations/{organization_id}/report-templates", tags=["report-templates"])

@@ -22,7 +22,7 @@ class Profile(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
-    memberships: Mapped[list["OrganizationMember"]] = relationship(back_populates="profile")
+    memberships: Mapped[list[OrganizationMember]] = relationship(back_populates="profile")
 
     def __repr__(self) -> str:
         return f"<Profile {self.id}>"

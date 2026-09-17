@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from database.models import CalculationRule, ReportField, ReportSection, ReportTemplate, ReportTemplateVersion
+from database.models import ReportField, ReportSection, ReportTemplate, ReportTemplateVersion
 
 
 def get_template(db: Session, organization_id: uuid.UUID, template_id: uuid.UUID) -> ReportTemplate | None:

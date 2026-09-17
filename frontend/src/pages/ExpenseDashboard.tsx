@@ -1,29 +1,40 @@
-import { useEffect, useState } from 'react'
-import { Donut, BarTrend, RankedBars } from '../components/charts/Charts'
-import { fetchExpensesByCategory, fetchExpensesMonthly, fetchExpensesRecent } from '../api/reportsApi'
-import type { ExpenseCategoryRow, MonthlyExpenseRow, RecentExpenseRow } from '../api/types'
-import { formatGBP, formatPct, monthLabel, parseAmount, pctChange } from '../data/reportData'
+import { useEffect, useMemo, useState } from 'react'
+import { BarTrend, Donut, RankedBars } from '../components/charts/Charts'
+import { fetchExpenseCategories, fetchExpensesByCategory, fetchExpensesMonthly, fetchExpensesRecent } from '../api/reportsApi'
+import type { ExpenseCategoryDef, ExpenseCategoryRow, MonthlyExpenseRow, RecentExpenseRow } from '../api/types'
+import { formatGBP, monthLabel, parseAmount } from '../data/reportData'
+import { MONTH_NAMES, MONTH_SHORT_NAMES, monthRangeISO, todayISO, type MonthFilter } from '../lib/dashboardRange'
+import { downloadCsv } from '../lib/csvExport'
 
-const categoryPalette = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7']
+const categoryPalette = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#7a5cf0', '#c04851', '#3aa7a0']
 
 type ExpenseDashboardProps = {
   organizationId: string | null
 }
 
-function monthBounds(monthKey: string): { since: string; until: string } {
-  const [year, month] = monthKey.split('-').map(Number)
-  const since = `${monthKey}-01`
-  const untilDate = new Date(year, month, 0) // last day of the month
-  const until = untilDate.toISOString().slice(0, 10)
-  return { since, until }
-}
+const RECORDS_PAGE_SIZE = 15
+// Wide enough to cover a full calendar year either side of today, so the
+// year's worth of monthly data (which can include past AND future-dated
+// months relative to "today") is never silently cut off.
+const MONTHLY_FETCH_MONTHS = 24
+const RECENT_FETCH_LIMIT = 500
+
+const sumMonthly = (rows: MonthlyExpenseRow[]) => rows.reduce((total, row) => total + parseAmount(row.total), 0)
 
 function ExpenseDashboard({ organizationId }: ExpenseDashboardProps) {
-  const [monthly, setMonthly] = useState<MonthlyExpenseRow[]>([])
-  const [categories, setCategories] = useState<ExpenseCategoryRow[]>([])
-  const [recent, setRecent] = useState<RecentExpenseRow[]>([])
+  const year = new Date().getFullYear()
+
+  const [monthFilter, setMonthFilter] = useState<MonthFilter>('all')
+
+  const [monthlyRows, setMonthlyRows] = useState<MonthlyExpenseRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [categories, setCategories] = useState<ExpenseCategoryRow[]>([])
+  const [allCategoryDefs, setAllCategoryDefs] = useState<ExpenseCategoryDef[]>([])
+  const [recent, setRecent] = useState<RecentExpenseRow[]>([])
+  const [scopeLoading, setScopeLoading] = useState(true)
+  const [recordsPage, setRecordsPage] = useState(1)
 
   useEffect(() => {
     if (!organizationId) return
@@ -31,21 +42,11 @@ function ExpenseDashboard({ organizationId }: ExpenseDashboardProps) {
     setLoading(true)
     setError(null)
 
-    fetchExpensesMonthly(organizationId, 7)
-      .then(async (monthlyRows) => {
+    Promise.all([fetchExpensesMonthly(organizationId, MONTHLY_FETCH_MONTHS), fetchExpenseCategories(organizationId)])
+      .then(([rows, categoryDefs]) => {
         if (cancelled) return
-        setMonthly(monthlyRows)
-
-        const currentMonthKey = monthlyRows[monthlyRows.length - 1]?.month
-        const [categoryRows, recentRows] = await Promise.all([
-          currentMonthKey
-            ? fetchExpensesByCategory(organizationId, monthBounds(currentMonthKey).since, monthBounds(currentMonthKey).until)
-            : Promise.resolve([]),
-          fetchExpensesRecent(organizationId, 15),
-        ])
-        if (cancelled) return
-        setCategories(categoryRows)
-        setRecent(recentRows)
+        setMonthlyRows(rows)
+        setAllCategoryDefs(categoryDefs)
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load expense data.')
@@ -59,55 +60,150 @@ function ExpenseDashboard({ organizationId }: ExpenseDashboardProps) {
     }
   }, [organizationId])
 
-  const thisMonthRow = monthly[monthly.length - 1]
-  const lastMonthRow = monthly[monthly.length - 2]
-  const thisMonthTotal = thisMonthRow ? parseAmount(thisMonthRow.total) : 0
-  const lastMonthTotal = lastMonthRow ? parseAmount(lastMonthRow.total) : 0
-  const totalExpenses = monthly.reduce((sum, row) => sum + parseAmount(row.total), 0)
-  const avgDailyExpense = thisMonthTotal / 30
-  const expenseChange = pctChange(thisMonthTotal, lastMonthTotal)
-  const largestCategory = categories[0]
+  useEffect(() => {
+    setRecordsPage(1)
+  }, [monthFilter])
+
+  useEffect(() => {
+    if (!organizationId) return
+    let cancelled = false
+    setScopeLoading(true)
+
+    const scopedSince =
+      monthFilter === 'all' ? `${year}-01-01` : monthFilter === 'today' ? todayISO() : monthRangeISO(year, monthFilter).since
+    const scopedUntil =
+      monthFilter === 'all' ? `${year}-12-31` : monthFilter === 'today' ? todayISO() : monthRangeISO(year, monthFilter).until
+
+    Promise.all([
+      fetchExpensesByCategory(organizationId, scopedSince, scopedUntil),
+      fetchExpensesRecent(organizationId, RECENT_FETCH_LIMIT, scopedSince, scopedUntil),
+    ])
+      .then(([categoryRows, recentRows]) => {
+        if (cancelled) return
+        setCategories(categoryRows)
+        setRecent(recentRows)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load expense data.')
+      })
+      .finally(() => {
+        if (!cancelled) setScopeLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [organizationId, monthFilter, year])
+
+  const monthlyByKey = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of monthlyRows) map.set(row.month, parseAmount(row.total))
+    return map
+  }, [monthlyRows])
+
+  const selectedMonthKey = typeof monthFilter === 'number' ? `${year}-${String(monthFilter + 1).padStart(2, '0')}` : null
+
+  const grandTotal = sumMonthly(monthlyRows.filter((r) => r.month.startsWith(String(year))))
+  // Fixed /12 denominator — a month with nothing recorded yet must not pull
+  // the average up, same reasoning as the Sales Dashboard's days-in-month fix.
+  const avgPerMonth = grandTotal / 12
+
+  // "Today" has no precomputed monthly row to look up — sum the already
+  // today-scoped category totals instead (fetched by the effect above).
+  const scopedCategoryTotal = categories.reduce((sum, row) => sum + parseAmount(row.total), 0)
+
+  const totalExpenses =
+    monthFilter === 'all' ? grandTotal : monthFilter === 'today' ? scopedCategoryTotal : monthlyByKey.get(selectedMonthKey!) ?? 0
+
+  const monthlyChartData = monthlyRows
+    .filter((r) => r.month.startsWith(String(year)))
+    .sort((a, b) => (a.month < b.month ? -1 : 1))
+    .map((row) => ({ label: monthLabel(row.month), value: parseAmount(row.total) }))
 
   const donutSegments = categories.map((row, i) => ({
     label: row.category,
     value: parseAmount(row.total),
     color: categoryPalette[i % categoryPalette.length],
   }))
+  const topCategories = [...donutSegments].sort((a, b) => b.value - a.value).slice(0, 8)
 
-  const trendData = monthly.map((row) => ({ label: monthLabel(row.month), value: parseAmount(row.total) }))
+  const rangeLabelText = monthFilter === 'all' ? `${year} (All Months)` : monthFilter === 'today' ? 'Today' : `${MONTH_NAMES[monthFilter]} ${year}`
+
+  const recordsTotalPages = Math.max(1, Math.ceil(recent.length / RECORDS_PAGE_SIZE))
+  const pagedRecords = recent.slice((recordsPage - 1) * RECORDS_PAGE_SIZE, recordsPage * RECORDS_PAGE_SIZE)
+
+  function handleExportCsv() {
+    const headers = ['Date', 'Description', 'Category', 'Amount']
+    const rows = recent.map((row) => [row.date, row.description, row.category, parseAmount(row.amount)])
+    const fileScope = monthFilter === 'all' ? 'all-months' : monthFilter === 'today' ? `today-${todayISO()}` : MONTH_NAMES[monthFilter].toLowerCase()
+    downloadCsv(`expenses-${fileScope}-${year}.csv`, headers, rows)
+  }
 
   const kpis = [
-    { label: 'Total Expenses', value: formatGBP(totalExpenses, { decimals: false }), hint: 'across loaded months' },
-    { label: 'This Month', value: formatGBP(thisMonthTotal, { decimals: false }), hint: thisMonthRow ? monthLabel(thisMonthRow.month) : '—' },
-    { label: 'Avg Daily Expense', value: formatGBP(avgDailyExpense, { decimals: false }), hint: 'this month / 30' },
-    { label: 'Largest Category', value: largestCategory?.category ?? '—', hint: largestCategory ? formatGBP(parseAmount(largestCategory.total), { decimals: false }) : '' },
-    { label: 'Expense Change', value: formatPct(expenseChange), hint: 'vs previous month', positive: expenseChange <= 0 },
+    {
+      label: monthFilter === 'all' ? 'Grand Total' : monthFilter === 'today' ? 'Today Total' : `${MONTH_NAMES[monthFilter]} Total`,
+      value: formatGBP(totalExpenses, { decimals: false }),
+      hint: rangeLabelText,
+    },
+    { label: 'Grand Total (All Months)', value: formatGBP(grandTotal, { decimals: false }), hint: `${year}` },
+    { label: 'Monthly Average', value: formatGBP(avgPerMonth, { decimals: false }), hint: `${year}, 12 months` },
+    { label: 'Expense Categories', value: String(allCategoryDefs.length), hint: 'defined for this org' },
   ]
+
+  const header = (
+    <div className="report-card-header">
+      <div>
+        <p className="report-kicker">Expenses Dashboard</p>
+        <h1>Dosa n Chutney</h1>
+        <p className="report-subheading">Where the money is going, and which costs are rising</p>
+      </div>
+      <div className="dashboard-header-actions">
+        <button
+          type="button"
+          className={`dashboard-today-btn ${monthFilter === 'today' ? 'is-active' : ''}`}
+          aria-pressed={monthFilter === 'today'}
+          onClick={() => setMonthFilter((current) => (current === 'today' ? 'all' : 'today'))}
+        >
+          Today
+        </button>
+        <button type="button" className="dashboard-export-btn" onClick={handleExportCsv}>
+          Export CSV
+        </button>
+      </div>
+    </div>
+  )
+
+  const monthPills = (
+    <div className="report-panel-block dashboard-month-pill-panel">
+      <div className="dashboard-month-pills" role="group" aria-label="Filter by month">
+        {MONTH_SHORT_NAMES.map((short, index) => (
+          <button
+            key={short}
+            type="button"
+            className={`dashboard-month-pill ${monthFilter === index ? 'is-active' : ''}`}
+            aria-pressed={monthFilter === index}
+            onClick={() => setMonthFilter((current) => (current === index ? 'all' : index))}
+          >
+            {short}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 
   if (!organizationId || loading) {
     return (
       <main className="report-card report-card-simple">
-        <div className="report-card-header">
-          <div>
-            <p className="report-kicker">Expenses Dashboard</p>
-            <h1>Dosa n Chutney</h1>
-          </div>
-        </div>
+        {header}
         <p className="report-subheading">Loading…</p>
       </main>
     )
   }
 
-  if (monthly.length === 0) {
+  if (monthlyRows.length === 0) {
     return (
       <main className="report-card report-card-simple">
-        <div className="report-card-header">
-          <div>
-            <p className="report-kicker">Expenses Dashboard</p>
-            <h1>Dosa n Chutney</h1>
-            <p className="report-subheading">Where the money is going, and which costs are rising</p>
-          </div>
-        </div>
+        {header}
         <p className="report-subheading">No expenses logged yet — add expense rows to a Daily Sales Report to see them here.</p>
       </main>
     )
@@ -115,76 +211,115 @@ function ExpenseDashboard({ organizationId }: ExpenseDashboardProps) {
 
   return (
     <main className="report-card report-card-simple">
-      <div className="report-card-header">
-        <div>
-          <p className="report-kicker">Expenses Dashboard</p>
-          <h1>Dosa n Chutney</h1>
-          <p className="report-subheading">Where the money is going, and which costs are rising</p>
-        </div>
-      </div>
+      {header}
 
       {error ? <p className="feedback error">{error}</p> : null}
 
       <section className="dashboard-scroll">
-        <div className="report-dashboard-strip dashboard-strip-five">
+        <div className="report-dashboard-strip">
           {kpis.map((card) => (
             <div key={card.label} className="report-dashboard-card">
               <p>{card.label}</p>
-              <strong className={card.positive === false ? 'is-negative' : card.positive ? 'is-positive' : ''}>
-                {card.value}
-              </strong>
+              <strong>{card.value}</strong>
               <span className="dashboard-card-hint">{card.hint}</span>
             </div>
           ))}
         </div>
 
-        <div className="report-panel-block report-panel-expense">
-          <div className="report-panel-title">Expense Trend</div>
-          <div className="dashboard-panel-body">
-            <BarTrend data={trendData} color="var(--accent-expense)" formatValue={(v) => formatGBP(v, { decimals: false })} />
+        {monthPills}
+
+        <div className="report-two-column dashboard-two-column">
+          <div className="report-panel-block report-panel-expense">
+            <div className="report-panel-title">Monthly Expenses — {year}</div>
+            <div className="dashboard-panel-body">
+              {monthlyChartData.length ? (
+                <BarTrend data={monthlyChartData} color="var(--accent-expense)" formatValue={(v) => formatGBP(v, { decimals: false })} />
+              ) : (
+                <p className="dashboard-footnote">No monthly data yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="report-panel-block">
+            <div className="report-panel-title">
+              {monthFilter === 'all' ? `Expense by Category — ${rangeLabelText}` : `${rangeLabelText} Breakdown`}
+            </div>
+            {monthFilter !== 'all' ? <p className="dashboard-footnote">Expenses by category for {monthFilter === 'today' ? 'today' : 'this month'}</p> : null}
+            <div className="dashboard-panel-body dashboard-donut-body">
+              {scopeLoading ? (
+                <p className="dashboard-footnote">Loading…</p>
+              ) : donutSegments.length ? (
+                <>
+                  <Donut segments={donutSegments} centerLabel={rangeLabelText} centerValue={formatGBP(totalExpenses, { decimals: false })} />
+                  <RankedBars rows={donutSegments} formatValue={(v) => formatGBP(v, { decimals: false })} />
+                </>
+              ) : (
+                <p className="dashboard-footnote">No categorised expenses in this range yet.</p>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="report-panel-block">
-          <div className="report-panel-title">Expense by Category{thisMonthRow ? ` — ${monthLabel(thisMonthRow.month)}` : ''}</div>
-          <div className="dashboard-panel-body dashboard-donut-body">
-            {donutSegments.length ? (
-              <>
-                <Donut segments={donutSegments} centerLabel="this month" centerValue={formatGBP(thisMonthTotal, { decimals: false })} />
-                <RankedBars rows={donutSegments} formatValue={(v) => formatGBP(v, { decimals: false })} />
-              </>
+          <div className="report-panel-title">Top Categories — {rangeLabelText}</div>
+          <div className="dashboard-panel-body">
+            {topCategories.length ? (
+              <RankedBars rows={topCategories} formatValue={(v) => formatGBP(v, { decimals: false })} />
             ) : (
-              <p className="dashboard-footnote">No expense rows for this month yet.</p>
+              <p className="dashboard-footnote">No categorised expenses in this range yet.</p>
             )}
           </div>
         </div>
 
         <div className="report-panel-block">
-          <div className="report-panel-title">Recent Expenses</div>
+          <div className="report-panel-title">Expense Records — {rangeLabelText}</div>
           <div className="dashboard-panel-body dashboard-recent-body">
-            {recent.length ? (
-              <table className="dashboard-recent-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Category</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((row, index) => (
-                    <tr key={`${row.date}-${row.description}-${index}`}>
-                      <td>{new Date(`${row.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</td>
-                      <td>{row.description}</td>
-                      <td>{row.category}</td>
-                      <td>{formatGBP(parseAmount(row.amount), { decimals: false })}</td>
+            {scopeLoading ? (
+              <p className="dashboard-footnote">Loading records…</p>
+            ) : pagedRecords.length ? (
+              <>
+                <table className="dashboard-recent-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Description</th>
+                      <th>Category</th>
+                      <th>Amount</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {pagedRecords.map((row, index) => (
+                      <tr key={`${row.date}-${row.description}-${index}`}>
+                        <td>{new Date(`${row.date}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        <td>{row.description}</td>
+                        <td>{row.category}</td>
+                        <td>{formatGBP(parseAmount(row.amount), { decimals: false })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {recordsTotalPages > 1 ? (
+                  <div className="dashboard-pagination">
+                    <span>
+                      Showing {(recordsPage - 1) * RECORDS_PAGE_SIZE + 1}–{Math.min(recordsPage * RECORDS_PAGE_SIZE, recent.length)} of {recent.length}
+                    </span>
+                    <div className="dashboard-pagination-controls">
+                      <button type="button" disabled={recordsPage <= 1} onClick={() => setRecordsPage((p) => p - 1)}>
+                        ‹
+                      </button>
+                      <span>
+                        Page {recordsPage} of {recordsTotalPages}
+                      </span>
+                      <button type="button" disabled={recordsPage >= recordsTotalPages} onClick={() => setRecordsPage((p) => p + 1)}>
+                        ›
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : (
-              <p className="dashboard-footnote">No expenses logged yet.</p>
+              <p className="dashboard-footnote">No expenses logged for {rangeLabelText.toLowerCase()}.</p>
             )}
           </div>
         </div>

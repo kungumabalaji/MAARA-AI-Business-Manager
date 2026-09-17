@@ -1,0 +1,7 @@
+# Dev + CI tooling. Installed locally and in GitHub Actions, never in the
+# production image. Includes everything in requirement.txt too.
+-r requirement.txt
+
+pytest==8.3.4
+pytest-asyncio==1.2.0
+ruff==0.8.4

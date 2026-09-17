@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import SalesDashboard from './SalesDashboard'
 import ExpenseDashboard from './ExpenseDashboard'
 import ProfitTracker from './ProfitTracker'
-import { fetchDailyReport, fetchMe, saveDailyReport } from '../api/reportsApi'
+import { fetchDailyReport, fetchDailyReportById, fetchMe, saveDailyReport, updateDailyReport } from '../api/reportsApi'
+import type { DailyReportOut } from '../api/types'
+import { isAcceptableNumberInput, parseAmount } from '../lib/validation'
 
 type DailyReportPageProps = {
   userEmail?: string
@@ -17,22 +19,27 @@ type ExpenseItem = {
 
 // "Total Sales" and "Total Expenses" are computed, not typed in — they aren't
 // part of this list, they're rendered as their own read-only row instead.
+// Tips/Payout are recorded but deliberately excluded from Total Sales —
+// they're cash-handling figures, not revenue (see dashboard_service.py).
 const salesRowsBeforeTotal = [
   { key: 'openingCash', label: 'Opening Cash' },
-  { key: 'cardSales', label: 'Card Sales' },
+  { key: 'cardSalesMachine', label: 'Card Sales (Machine)' },
   { key: 'cashSales', label: 'Cash Sales' },
   { key: 'uberEatsSales', label: 'Uber Eats Sales' },
   { key: 'justEatSales', label: 'Just Eat Sales' },
   { key: 'deliverooSales', label: 'Deliveroo Sales' },
   { key: 'otherSales', label: 'Other Sales' },
+  { key: 'tipsOnCard', label: 'Tips on Card' },
+  { key: 'payout', label: 'Payout' },
 ] as const
 
 const salesRowsAfterTotal = [{ key: 'miscIncome', label: 'Misc Income' }] as const
 
 // The channels that make up Total Sales — matches the real backend rule
-// (calculation_rules "total_sales": SUM of exactly these). Opening Cash and
-// Misc Income are deliberately excluded, same as the seeded template.
-const SALES_CHANNEL_KEYS = ['cardSales', 'cashSales', 'uberEatsSales', 'justEatSales', 'deliverooSales', 'otherSales'] as const
+// (calculation_rules "total_sales": SUM of exactly these). Opening Cash,
+// Tips, Payout, and Misc Income are deliberately excluded, same as the
+// seeded template.
+const SALES_CHANNEL_KEYS = ['cardSalesMachine', 'cashSales', 'uberEatsSales', 'justEatSales', 'deliverooSales', 'otherSales'] as const
 
 const sidebarItems = [
   'Daily Sales Report',
@@ -51,12 +58,14 @@ type SidebarItem = (typeof sidebarItems)[number]
 // stores (see the seeded Dosa n Chutney template — Phase 3 of the backend work).
 const FIELD_KEY_MAP: Record<SalesKey, string> = {
   openingCash: 'opening_cash',
-  cardSales: 'card_sales',
+  cardSalesMachine: 'card_sales_machine',
   cashSales: 'cash_sales',
   uberEatsSales: 'uber_eats',
   justEatSales: 'just_eat',
   deliverooSales: 'deliveroo',
   otherSales: 'other_sales',
+  tipsOnCard: 'tips_on_card',
+  payout: 'payout',
   miscIncome: 'misc_income',
 }
 
@@ -67,12 +76,14 @@ const SUMMARY_FIELD_KEY_MAP = {
 
 const EMPTY_SALES: Record<SalesKey, string> = {
   openingCash: '',
-  cardSales: '',
+  cardSalesMachine: '',
   cashSales: '',
   uberEatsSales: '',
   justEatSales: '',
   deliverooSales: '',
   otherSales: '',
+  tipsOnCard: '',
+  payout: '',
   miscIncome: '',
 }
 
@@ -85,21 +96,15 @@ const DEFAULT_EXPENSES: ExpenseItem[] = [
   { id: 4, description: '', amount: '' },
 ]
 
-function parseAmount(value: string): number {
-  const cleaned = value.replace(/[^0-9.-]/g, '')
-  const parsed = Number(cleaned)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
 function formatAmount(value: number): string {
   return `£ ${value.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
   const [activeSection, setActiveSection] = useState<SidebarItem>('Daily Sales Report')
-  const [reportDate, setReportDate] = useState('2026-08-07')
-  const [preparedBy, setPreparedBy] = useState('')
-  const [checkedBy, setCheckedBy] = useState('')
+  const [reportDate, setReportDate] = useState(
+    () => new Date().toLocaleDateString('en-CA')
+  )
   const [sales, setSales] = useState<Record<SalesKey, string>>(EMPTY_SALES)
   const [expenses, setExpenses] = useState<ExpenseItem[]>(DEFAULT_EXPENSES)
   const [summary, setSummary] = useState(EMPTY_SUMMARY)
@@ -111,6 +116,23 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
+
+  // The saved report for the selected date, if any. Fetched for an EXISTENCE
+  // CHECK ONLY — its values are never copied into the form automatically.
+  const [existingReport, setExistingReport] = useState<DailyReportOut | null>(null)
+  // True only after the user explicitly clicks "View / Edit Existing Report",
+  // or after a successful save. Gates the overwrite warning.
+  const [existingReportInForm, setExistingReportInForm] = useState(false)
+
+  // Set when editing one specific past entry (via the Sales Dashboard's Edit
+  // action) instead of adding a new one. Save then updates that report in
+  // place rather than inserting a fresh row.
+  const [editingReportId, setEditingReportId] = useState<string | null>(null)
+  const [editLoadError, setEditLoadError] = useState<string | null>(null)
+  // The date-change effect below normally blanks the form — set true right
+  // before programmatically changing reportDate while loading an edit, so
+  // that reset is skipped for that one run.
+  const skipResetRef = useRef(false)
 
   const displayDate = useMemo(() => {
     const [year, month, day] = reportDate.split('-')
@@ -148,11 +170,29 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
     }
   }, [])
 
-  // Load whatever was already saved for this date, every time the date (or
-  // the resolved organization) changes.
+  // Check whether a report already exists for this date. This NEVER populates
+  // the entry form — it only records the saved report so we can warn the user
+  // and offer an explicit "View / Edit Existing Report" action. The form always
+  // starts blank, and values from a previously selected date never leak in.
   useEffect(() => {
     if (!organizationId) return
+    if (skipResetRef.current) {
+      // This date change was triggered by startEditingReport, which already
+      // populated the form — don't blank it back out.
+      skipResetRef.current = false
+      return
+    }
+
     let cancelled = false
+
+    // Fresh date => fresh blank form.
+    setEditingReportId(null)
+    setEditLoadError(null)
+    setSales(EMPTY_SALES)
+    setSummary(EMPTY_SUMMARY)
+    setExpenses(DEFAULT_EXPENSES)
+    setExistingReport(null)
+    setExistingReportInForm(false)
     setLoadingReport(true)
     setLoadError(null)
     setSavedMessage(null)
@@ -160,33 +200,10 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
     fetchDailyReport(organizationId, reportDate)
       .then((report) => {
         if (cancelled) return
-        if (report) {
-          const nextSales = { ...EMPTY_SALES }
-          for (const key of Object.keys(FIELD_KEY_MAP) as SalesKey[]) {
-            nextSales[key] = report.values[FIELD_KEY_MAP[key]] ?? ''
-          }
-          setSales(nextSales)
-          setSummary({
-            nextDayOpenCash: report.values[SUMMARY_FIELD_KEY_MAP.nextDayOpenCash] ?? '',
-            cashBalance: report.values[SUMMARY_FIELD_KEY_MAP.cashBalance] ?? '',
-          })
-          setExpenses(
-            report.expenses.length > 0
-              ? report.expenses.map((expense, index) => ({
-                  id: index + 1,
-                  description: expense.description,
-                  amount: expense.amount,
-                }))
-              : DEFAULT_EXPENSES,
-          )
-        } else {
-          setSales(EMPTY_SALES)
-          setSummary(EMPTY_SUMMARY)
-          setExpenses(DEFAULT_EXPENSES)
-        }
+        setExistingReport(report ?? null)
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load this report.')
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to check this date.')
       })
       .finally(() => {
         if (!cancelled) setLoadingReport(false)
@@ -197,14 +214,98 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
     }
   }, [organizationId, reportDate])
 
+  // Explicit, user-initiated: copy the saved report's values into the form.
+  // This is the ONLY place saved data enters the entry form.
+  function loadExistingReportIntoForm() {
+    if (!existingReport) return
+
+    const nextSales = { ...EMPTY_SALES }
+    for (const key of Object.keys(FIELD_KEY_MAP) as SalesKey[]) {
+      nextSales[key] = existingReport.values[FIELD_KEY_MAP[key]] ?? ''
+    }
+    setSales(nextSales)
+    setSummary({
+      nextDayOpenCash: existingReport.values[SUMMARY_FIELD_KEY_MAP.nextDayOpenCash] ?? '',
+      cashBalance: existingReport.values[SUMMARY_FIELD_KEY_MAP.cashBalance] ?? '',
+    })
+    setExpenses(
+      existingReport.expenses.length > 0
+        ? existingReport.expenses.map((expense, index) => ({
+            id: index + 1,
+            description: expense.description,
+            amount: expense.amount,
+          }))
+        : DEFAULT_EXPENSES,
+    )
+    setExistingReportInForm(true)
+    setSavedMessage(null)
+  }
+
+  // Loads one specific saved report into the form for in-place editing —
+  // reached from the Sales Dashboard's records table Edit action.
+  async function startEditingReport(reportId: string) {
+    if (!organizationId) return
+    setActiveSection('Daily Sales Report')
+    setEditLoadError(null)
+    setLoadingReport(true)
+    try {
+      const report = await fetchDailyReportById(organizationId, reportId)
+      skipResetRef.current = true
+      setReportDate(report.report_date)
+      setEditingReportId(report.id)
+
+      const nextSales = { ...EMPTY_SALES }
+      for (const key of Object.keys(FIELD_KEY_MAP) as SalesKey[]) {
+        nextSales[key] = report.values[FIELD_KEY_MAP[key]] ?? ''
+      }
+      setSales(nextSales)
+      setSummary({
+        nextDayOpenCash: report.values[SUMMARY_FIELD_KEY_MAP.nextDayOpenCash] ?? '',
+        cashBalance: report.values[SUMMARY_FIELD_KEY_MAP.cashBalance] ?? '',
+      })
+      setExpenses(
+        report.expenses.length > 0
+          ? report.expenses.map((expense, index) => ({ id: index + 1, description: expense.description, amount: expense.amount }))
+          : DEFAULT_EXPENSES,
+      )
+      setExistingReport(report)
+      setExistingReportInForm(true)
+      setSavedMessage(null)
+    } catch (err) {
+      setEditLoadError(err instanceof Error ? err.message : 'Failed to load that entry for editing.')
+    } finally {
+      setLoadingReport(false)
+    }
+  }
+
+  function cancelEditing() {
+    setEditingReportId(null)
+    setEditLoadError(null)
+    setSales(EMPTY_SALES)
+    setSummary(EMPTY_SUMMARY)
+    setExpenses(DEFAULT_EXPENSES)
+    setExistingReport(null)
+    setExistingReportInForm(false)
+    setSavedMessage(null)
+  }
+
   function updateSales(key: SalesKey, value: string) {
+    // Reject any keystroke that would put a non-numeric character in the box.
+    if (!isAcceptableNumberInput(value)) return
     setSales((current) => ({ ...current, [key]: value }))
   }
 
   function updateExpense(id: number, field: 'description' | 'amount', value: string) {
+    // The amount column is numeric-only; the description column is free text.
+    if (field === 'amount' && !isAcceptableNumberInput(value)) return
     setExpenses((current) =>
       current.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
     )
+  }
+
+  function updateSummary(key: keyof typeof EMPTY_SUMMARY, value: string) {
+    if (!isAcceptableNumberInput(value)) return
+    setSummary((current) => ({ ...current, [key]: value }))
   }
 
   function addExpenseRow() {
@@ -213,6 +314,7 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
 
   async function handleSave() {
     if (!organizationId) return
+
     setSaving(true)
     setSaveError(null)
     setSavedMessage(null)
@@ -225,14 +327,24 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
       values[SUMMARY_FIELD_KEY_MAP.nextDayOpenCash] = summary.nextDayOpenCash
       values[SUMMARY_FIELD_KEY_MAP.cashBalance] = summary.cashBalance
 
-      await saveDailyReport(organizationId, reportDate, {
+      const payload = {
         values,
         expenses: expenses
           .filter((expense) => expense.description.trim() && parseAmount(expense.amount) !== 0)
           .map((expense) => ({ description: expense.description, amount: expense.amount })),
-      })
+      }
 
-      setSavedMessage(`Daily report for ${displayDate} saved successfully.`)
+      const saved = editingReportId
+        ? await updateDailyReport(organizationId, editingReportId, payload)
+        : await saveDailyReport(organizationId, reportDate, payload)
+
+      setExistingReport(saved)
+      setExistingReportInForm(true)
+      setSavedMessage(
+        editingReportId
+          ? `Entry for ${displayDate} updated.`
+          : `Entry for ${displayDate} saved. It adds to that day's totals on the dashboards.`,
+      )
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save. Please try again.')
     } finally {
@@ -304,6 +416,32 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
 
               {orgError ? <p className="feedback error">{orgError}</p> : null}
               {loadError ? <p className="feedback error">{loadError}</p> : null}
+              {editLoadError ? <p className="feedback error">{editLoadError}</p> : null}
+
+              {editingReportId ? (
+                <div className="report-existing-banner" role="status">
+                  <span>Editing the entry saved for {displayDate}. Saving updates it in place.</span>
+                  <button type="button" className="report-existing-banner-btn" onClick={cancelEditing}>
+                    Cancel — start a new entry instead
+                  </button>
+                </div>
+              ) : null}
+
+              {existingReport && !existingReportInForm ? (
+                <div className="report-existing-banner" role="status">
+                  <span>
+                    An entry was already saved for this date. Saving again adds a new
+                    entry — it won&rsquo;t overwrite. Dashboards add every entry together.
+                  </span>
+                  <button
+                    type="button"
+                    className="report-existing-banner-btn"
+                    onClick={loadExistingReportIntoForm}
+                  >
+                    Load last entry
+                  </button>
+                </div>
+              ) : null}
 
               <section className="report-two-column">
                 <div className="report-panel-block report-panel-income">
@@ -390,7 +528,7 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
                         inputMode="decimal"
                         placeholder="£ 0.00"
                         value={summary.nextDayOpenCash}
-                        onChange={(event) => setSummary((current) => ({ ...current, nextDayOpenCash: event.target.value }))}
+                        onChange={(event) => updateSummary('nextDayOpenCash', event.target.value)}
                       />
                     </div>
 
@@ -402,7 +540,7 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
                         inputMode="decimal"
                         placeholder="£ 0.00"
                         value={summary.cashBalance}
-                        onChange={(event) => setSummary((current) => ({ ...current, cashBalance: event.target.value }))}
+                        onChange={(event) => updateSummary('cashBalance', event.target.value)}
                       />
                     </div>
                   </div>
@@ -410,29 +548,9 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
               </section>
 
               <section className="report-footer-grid">
-                <label className="report-signoff-field">
-                  <span>Prepared By</span>
-                  <select value={preparedBy} onChange={(event) => setPreparedBy(event.target.value)}>
-                    <option value="">Select staff</option>
-                    <option value="Asha">Asha</option>
-                    <option value="Kumar">Kumar</option>
-                    <option value="Meena">Meena</option>
-                  </select>
-                </label>
-
-                <label className="report-signoff-field">
-                  <span>Checked By</span>
-                  <select value={checkedBy} onChange={(event) => setCheckedBy(event.target.value)}>
-                    <option value="">Select manager</option>
-                    <option value="Manager Arun">Manager Arun</option>
-                    <option value="Manager Devi">Manager Devi</option>
-                    <option value="Manager Priya">Manager Priya</option>
-                  </select>
-                </label>
-
                 <div className="report-actions report-actions-compact">
                   <button type="button" className="report-save" onClick={handleSave} disabled={saving || !organizationId}>
-                    {saving ? 'Saving…' : 'Save Daily Report'}
+                    {saving ? 'Saving…' : editingReportId ? 'Update Entry' : 'Save Daily Report'}
                   </button>
                   {savedMessage ? <p className="report-saved-message">{savedMessage}</p> : null}
                   {saveError ? <p className="feedback error">{saveError}</p> : null}
@@ -441,7 +559,9 @@ function DailyReportPage({ userEmail, onSignOut }: DailyReportPageProps) {
             </main>
           ) : null}
 
-          {activeSection === 'Sales Dashboard' ? <SalesDashboard organizationId={organizationId} /> : null}
+          {activeSection === 'Sales Dashboard' ? (
+            <SalesDashboard organizationId={organizationId} onEditReport={startEditingReport} />
+          ) : null}
 
           {activeSection === 'Expenses Dashboard' ? <ExpenseDashboard organizationId={organizationId} /> : null}
 

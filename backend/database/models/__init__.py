@@ -5,19 +5,19 @@ against. Anything added to database/models/ needs a line here.
 """
 
 from database.base import Base
-from database.models.profile import Profile
-from database.models.organization import Organization
+from database.models.audit import AuditLog
+from database.models.daily_report import DailyReport, DailyReportExpense, DailyReportValue
+from database.models.expense_category import ExpenseCategory
 from database.models.membership import OrganizationMember
+from database.models.organization import Organization
+from database.models.profile import Profile
 from database.models.template import (
+    CalculationRule,
+    ReportField,
+    ReportSection,
     ReportTemplate,
     ReportTemplateVersion,
-    ReportSection,
-    ReportField,
-    CalculationRule,
 )
-from database.models.expense_category import ExpenseCategory
-from database.models.daily_report import DailyReport, DailyReportValue, DailyReportExpense
-from database.models.audit import AuditLog
 
 __all__ = [
     "Base",

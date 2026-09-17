@@ -1,11 +1,18 @@
-fastapi
-uvicorn
-sqlalchemy
-psycopg[binary]
-alembic
-python-dotenv
-pydantic-settings
-PyJWT[crypto]
-httpx
-pytest
-pytest-asyncio
+# Runtime dependencies — pinned for reproducible builds.
+# Bump deliberately, let CI test it, then merge.
+# Dev/test tools live in requirements-dev.txt.
+fastapi==0.115.6
+uvicorn[standard]==0.29.0
+sqlalchemy==2.0.39
+psycopg[binary]==3.3.4
+alembic==1.16.5
+python-dotenv==1.1.1
+pydantic==2.11.10
+pydantic-settings==2.10.1
+PyJWT[crypto]==2.9.0
+cryptography==43.0.3
+httpx==0.27.2
+pandas
+openpyxl
+anthropic==0.72.0
+python-multipart==0.0.18

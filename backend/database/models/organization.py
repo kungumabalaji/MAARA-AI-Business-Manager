@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,10 +15,10 @@ class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="GBP")
 
-    members: Mapped[list["OrganizationMember"]] = relationship(
+    members: Mapped[list[OrganizationMember]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
-    report_templates: Mapped[list["ReportTemplate"]] = relationship(
+    report_templates: Mapped[list[ReportTemplate]] = relationship(
         back_populates="organization", cascade="all, delete-orphan"
     )
 

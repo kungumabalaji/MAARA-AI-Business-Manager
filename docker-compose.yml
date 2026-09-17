@@ -1,0 +1,66 @@
+# Local development stack: Postgres + FastAPI (hot reload) + Vite dev server.
+# Nothing here touches your Supabase project — it runs an entirely local DB.
+#
+#   docker compose up          # start everything
+#   docker compose down        # stop
+#   docker compose down -v      # stop and wipe the local DB
+#
+# Frontend: http://localhost:5173   Backend: http://localhost:8000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: maara
+      POSTGRES_PASSWORD: maara
+      POSTGRES_DB: maara
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maara"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      target: base
+    command: >
+      sh -c "pip install -r requirements-dev.txt &&
+             alembic upgrade head &&
+             uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      DATABASE_URL: postgresql://maara:maara@db:5432/maara
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_JWT_AUDIENCE: authenticated
+      CORS_ALLOW_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-slim
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-${SUPABASE_URL}}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY}}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

@@ -1,0 +1,14 @@
+# Lint + format config. Run locally with:  ruff check .   and   ruff format .
+line-length = 110
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "B008",  # FastAPI's Depends() in defaults is the intended pattern
+    "E501",  # long lines flagged by the formatter, not the linter
+]
+
+[lint.per-file-ignores]
+"alembic/**" = ["E402", "F401"]
+"tests/**" = ["B011"]

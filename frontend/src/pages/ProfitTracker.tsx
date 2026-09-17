@@ -1,15 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { MultiLineTrend } from '../components/charts/Charts'
 import { fetchProfitDailySummary, fetchProfitMonthly } from '../api/reportsApi'
 import type { DailyProfitSummary, MonthlyProfitRow } from '../api/types'
 import { formatGBP, formatPct, monthLabel, parseAmount, pctChange } from '../data/reportData'
+import { MONTH_NAMES, MONTH_SHORT_NAMES } from '../lib/dashboardRange'
 
 type ProfitTrackerProps = {
   organizationId: string | null
   defaultDate: string
 }
 
+// Local, narrower than the shared dashboardRange MonthFilter (which also
+// allows 'today' for the Sales/Expenses "Today" quick filter) — this page
+// doesn't have that button, so it only ever deals with a month or 'all'.
+type MonthFilter = number | 'all'
+
+// Wide enough that January is never silently cut off by the "recent N
+// months" window — see the same fix applied to Sales/Expenses.
+const MONTHLY_FETCH_MONTHS = 24
+
 function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
+  const year = new Date().getFullYear()
+  const [monthFilter, setMonthFilter] = useState<MonthFilter>('all')
   const [monthly, setMonthly] = useState<MonthlyProfitRow[]>([])
   const [dailySummary, setDailySummary] = useState<DailyProfitSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -21,7 +33,7 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
     setLoading(true)
     setError(null)
 
-    Promise.all([fetchProfitMonthly(organizationId, 7), fetchProfitDailySummary(organizationId, defaultDate)])
+    Promise.all([fetchProfitMonthly(organizationId, MONTHLY_FETCH_MONTHS), fetchProfitDailySummary(organizationId, defaultDate)])
       .then(([monthlyRows, summary]) => {
         if (cancelled) return
         setMonthly(monthlyRows)
@@ -39,16 +51,31 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
     }
   }, [organizationId, defaultDate])
 
-  const thisMonthRow = monthly[monthly.length - 1]
-  const lastMonthRow = monthly[monthly.length - 2]
+  const yearRows = useMemo(() => monthly.filter((r) => r.month.startsWith(String(year))), [monthly, year])
+  const byMonthKey = useMemo(() => new Map(monthly.map((r) => [r.month, r])), [monthly])
 
-  const revenue = thisMonthRow ? parseAmount(thisMonthRow.revenue) : 0
-  const expenses = thisMonthRow ? parseAmount(thisMonthRow.expenses) : 0
+  const selectedMonthKey = monthFilter === 'all' ? null : `${year}-${String(monthFilter + 1).padStart(2, '0')}`
+  const selectedRow = selectedMonthKey ? byMonthKey.get(selectedMonthKey) : undefined
+  const previousMonthKey = (() => {
+    if (monthFilter === 'all') return null
+    const prevIndex = monthFilter === 0 ? 11 : monthFilter - 1
+    const prevYear = monthFilter === 0 ? year - 1 : year
+    return `${prevYear}-${String(prevIndex + 1).padStart(2, '0')}`
+  })()
+  const previousRow = previousMonthKey ? byMonthKey.get(previousMonthKey) : undefined
+
+  // "All Months" aggregates every 2026 row; a specific month shows just that
+  // row (with a vs-previous-month delta) — same pattern as the other dashboards.
+  const revenue =
+    monthFilter === 'all' ? yearRows.reduce((sum, r) => sum + parseAmount(r.revenue), 0) : selectedRow ? parseAmount(selectedRow.revenue) : 0
+  const expenses =
+    monthFilter === 'all' ? yearRows.reduce((sum, r) => sum + parseAmount(r.expenses), 0) : selectedRow ? parseAmount(selectedRow.expenses) : 0
   const profit = revenue - expenses
   const margin = revenue ? (profit / revenue) * 100 : 0
 
-  const lastRevenue = lastMonthRow ? parseAmount(lastMonthRow.revenue) : 0
-  const lastExpenses = lastMonthRow ? parseAmount(lastMonthRow.expenses) : 0
+  const hasComparison = monthFilter !== 'all' && previousRow !== undefined
+  const lastRevenue = previousRow ? parseAmount(previousRow.revenue) : 0
+  const lastExpenses = previousRow ? parseAmount(previousRow.expenses) : 0
   const lastProfit = lastRevenue - lastExpenses
   const lastMargin = lastRevenue ? (lastProfit / lastRevenue) * 100 : 0
 
@@ -56,24 +83,29 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
   const expenseChange = pctChange(expenses, lastExpenses)
   const profitChange = pctChange(profit, lastProfit)
 
-  const trendData = monthly.map((row) => {
-    const rev = parseAmount(row.revenue)
-    const exp = parseAmount(row.expenses)
-    return { label: monthLabel(row.month), values: { revenue: rev, expenses: exp, profit: rev - exp } }
-  })
+  const rangeLabelText = monthFilter === 'all' ? `${year} (All Months)` : `${MONTH_NAMES[monthFilter]} ${year}`
+
+  const trendData = yearRows
+    .slice()
+    .sort((a, b) => (a.month < b.month ? -1 : 1))
+    .map((row) => {
+      const rev = parseAmount(row.revenue)
+      const exp = parseAmount(row.expenses)
+      return { label: monthLabel(row.month), values: { revenue: rev, expenses: exp, profit: rev - exp } }
+    })
 
   const cashVariance = dailySummary ? parseAmount(dailySummary.cashVariance) : 0
   const cashOk = Math.abs(cashVariance) < 1
 
   const insights = [
-    thisMonthRow
+    hasComparison
       ? {
           icon: revenueChange >= 0 ? '↗' : '↘',
           tone: revenueChange >= 0 ? 'good' : 'bad',
           text: `Revenue ${revenueChange >= 0 ? 'increased' : 'decreased'} ${formatPct(Math.abs(revenueChange)).replace('+', '')} compared with last month.`,
         }
       : null,
-    thisMonthRow
+    hasComparison
       ? {
           icon: profitChange >= 0 ? '↗' : '↘',
           tone: profitChange >= 0 ? 'good' : 'bad',
@@ -126,7 +158,7 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
         <div>
           <p className="report-kicker">Profit &amp; Performance</p>
           <h1>Are we actually making money?</h1>
-          <p className="report-subheading">Revenue, expenses, and the operating profit they produce</p>
+          <p className="report-subheading">Revenue, expenses, and the operating profit they produce — {rangeLabelText}</p>
         </div>
       </div>
 
@@ -137,7 +169,7 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
           <div className="report-dashboard-card report-dashboard-card-large">
             <p>Total Revenue</p>
             <strong>{formatGBP(revenue, { decimals: false })}</strong>
-            {lastMonthRow ? (
+            {hasComparison ? (
               <span className={`dashboard-delta ${revenueChange >= 0 ? 'is-positive' : 'is-negative'}`}>
                 {revenueChange >= 0 ? '▲' : '▼'} {formatPct(revenueChange)}
               </span>
@@ -146,7 +178,7 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
           <div className="report-dashboard-card report-dashboard-card-large">
             <p>Total Expenses</p>
             <strong>{formatGBP(expenses, { decimals: false })}</strong>
-            {lastMonthRow ? (
+            {hasComparison ? (
               <span className={`dashboard-delta ${expenseChange <= 0 ? 'is-positive' : 'is-negative'}`}>
                 {expenseChange >= 0 ? '▲' : '▼'} {formatPct(expenseChange)}
               </span>
@@ -155,7 +187,7 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
           <div className="report-dashboard-card report-dashboard-card-large">
             <p>Operating Profit</p>
             <strong>{formatGBP(profit, { decimals: false })}</strong>
-            {lastMonthRow ? (
+            {hasComparison ? (
               <span className={`dashboard-delta ${profitChange >= 0 ? 'is-positive' : 'is-negative'}`}>
                 {profitChange >= 0 ? '▲' : '▼'} {formatPct(profitChange)}
               </span>
@@ -164,11 +196,27 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
           <div className="report-dashboard-card report-dashboard-card-large">
             <p>Profit Margin</p>
             <strong>{margin.toFixed(1)}%</strong>
-            {lastMonthRow ? (
+            {hasComparison ? (
               <span className={`dashboard-delta ${margin >= lastMargin ? 'is-positive' : 'is-negative'}`}>
                 {margin >= lastMargin ? '▲' : '▼'} {formatPct(margin - lastMargin)}pt
               </span>
             ) : null}
+          </div>
+        </div>
+
+        <div className="report-panel-block dashboard-month-pill-panel">
+          <div className="dashboard-month-pills" role="group" aria-label="Filter by month">
+            {MONTH_SHORT_NAMES.map((short, index) => (
+              <button
+                key={short}
+                type="button"
+                className={`dashboard-month-pill ${monthFilter === index ? 'is-active' : ''}`}
+                aria-pressed={monthFilter === index}
+                onClick={() => setMonthFilter((current) => (current === index ? 'all' : index))}
+              >
+                {short}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -236,9 +284,9 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
           </div>
         </div>
 
-        {monthly.length > 0 ? (
+        {yearRows.length > 0 ? (
           <div className="report-panel-block">
-            <div className="report-panel-title">Monthly Profit Performance</div>
+            <div className="report-panel-title">Monthly Profit Performance — {year}</div>
             <div className="dashboard-panel-body dashboard-recent-body">
               <table className="dashboard-recent-table">
                 <thead>
@@ -251,20 +299,23 @@ function ProfitTracker({ organizationId, defaultDate }: ProfitTrackerProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthly.map((row) => {
-                    const rev = parseAmount(row.revenue)
-                    const exp = parseAmount(row.expenses)
-                    const prof = rev - exp
-                    return (
-                      <tr key={row.month}>
-                        <td>{monthLabel(row.month)}</td>
-                        <td>{formatGBP(rev, { decimals: false })}</td>
-                        <td>{formatGBP(exp, { decimals: false })}</td>
-                        <td>{formatGBP(prof, { decimals: false })}</td>
-                        <td>{rev ? ((prof / rev) * 100).toFixed(1) : '0.0'}%</td>
-                      </tr>
-                    )
-                  })}
+                  {yearRows
+                    .slice()
+                    .sort((a, b) => (a.month < b.month ? -1 : 1))
+                    .map((row) => {
+                      const rev = parseAmount(row.revenue)
+                      const exp = parseAmount(row.expenses)
+                      const prof = rev - exp
+                      return (
+                        <tr key={row.month} className={row.month === selectedMonthKey ? 'is-selected-row' : ''}>
+                          <td>{monthLabel(row.month)}</td>
+                          <td>{formatGBP(rev, { decimals: false })}</td>
+                          <td>{formatGBP(exp, { decimals: false })}</td>
+                          <td>{formatGBP(prof, { decimals: false })}</td>
+                          <td>{rev ? ((prof / rev) * 100).toFixed(1) : '0.0'}%</td>
+                        </tr>
+                      )
+                    })}
                 </tbody>
               </table>
             </div>

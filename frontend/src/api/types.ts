@@ -29,6 +29,21 @@ export type DailyReportOut = {
   checked_by: string | null
 }
 
+export type DailyReportListOut = {
+  items: DailyReportOut[]
+  total: number
+}
+
+export type SalesMonthSummary = {
+  year: number
+  month: string
+  daysInMonth: number
+  totalSales: string
+  avgDailySales: string
+  bestDay: { date: string; weekday: string; sales: string } | null
+  cardTips: string
+}
+
 export type DailyReportSavePayload = {
   values: Record<string, string>
   expenses: { description: string; amount: string }[]
@@ -38,29 +53,37 @@ export type DailyReportSavePayload = {
 
 export type DailySalesRow = {
   date: string
-  cardSales: string
+  cardSalesMachine: string
   cashSales: string
   uberEatsSales: string
   justEatSales: string
   deliverooSales: string
   otherSales: string
   miscIncome: string
+  tips: string
+  payout: string
 }
 
 export type MonthlySalesRow = {
   month: string
-  cardSales: string
+  cardSalesMachine: string
   cashSales: string
   uberEatsSales: string
   justEatSales: string
   deliverooSales: string
   otherSales: string
   miscIncome: string
+  tips: string
+  payout: string
 }
 
 export type MonthlyExpenseRow = { month: string; total: string }
 
+export type DailyExpenseRow = { date: string; total: string }
+
 export type ExpenseCategoryRow = { category: string; total: string }
+
+export type ExpenseCategoryDef = { key: string; label: string; is_fixed_cost: boolean; is_custom: boolean }
 
 export type RecentExpenseRow = { date: string; description: string; category: string; amount: string }
 

@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
@@ -24,7 +23,7 @@ def read_database_url() -> str | None:
     if not os.path.exists(env_path):
         return None
 
-    with open(env_path, "r", encoding="utf-8") as env_file:
+    with open(env_path, encoding="utf-8") as env_file:
         for line in env_file:
             line = line.strip()
             if not line or line.startswith("#"):

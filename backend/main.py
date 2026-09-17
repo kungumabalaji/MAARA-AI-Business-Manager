@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,6 +8,15 @@ from api.v1.daily_reports import router as daily_reports_router
 from api.v1.dashboards import router as dashboards_router
 from api.v1.report_templates import router as report_templates_router
 from core.config import get_settings
+
+# Without this, module loggers (services.vision_service, api.v1.*, ...) never
+# print anything below WARNING, so the terminal only shows uvicorn's bare
+# "METHOD path STATUS" access log lines with no context for *why* a request failed.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 app = FastAPI(title="MAARA AI Business Manager")
 
